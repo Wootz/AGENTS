@@ -1,0 +1,161 @@
+#!/bin/bash
+
+# 當任何指令失敗時立即中斷執行；未定義變數與 pipe 中段失敗一併視為錯誤
+set -euo pipefail
+
+# 以腳本所在目錄為工作根目錄，避免從其他路徑呼叫時解析錯誤
+cd "$(dirname "$0")"
+
+# 專案內部路徑
+PROJECT_PATH="{{PROJECT_PATH}}"
+PUBLISH_DIR="publish_output"
+ZIP_FILE="deploy.zip"
+
+echo "========================================================="
+echo "  {{APP_DISPLAY_NAME}} Azure App Service 發行設定檔 (Publish Profile) 部署腳本"
+echo "========================================================="
+
+# 1. 確保 publish_profiles 資料夾存在並搜尋其中的 *.publishsettings 檔案
+mkdir -p publish_profiles
+
+echo "🔍 正在尋找發行設定檔 (.publishsettings)..."
+PUBLISH_SETTINGS_FILE=$(find ./publish_profiles -maxdepth 1 -iname "*.publishsettings" 2>/dev/null | head -n 1)
+
+# 降級防呆：若專用資料夾沒有，也檢查一下根目錄
+if [ -z "$PUBLISH_SETTINGS_FILE" ]; then
+    PUBLISH_SETTINGS_FILE=$(find . -maxdepth 1 -iname "*.publishsettings" | head -n 1)
+fi
+
+if [ -z "$PUBLISH_SETTINGS_FILE" ]; then
+    echo "❌ 錯誤: 找不到任何 *.publishsettings 檔案。"
+    echo "💡 請至 Azure Portal 的 App Service 頁面頂端，"
+    echo "   點選「下載發行設定檔」(Get publish profile)，"
+    echo "   並將下載的檔案放入專屬資料夾 [publish_profiles/] 中後重試。"
+    exit 1
+fi
+
+echo "✅ 找到設定檔: $(basename "$PUBLISH_SETTINGS_FILE")"
+
+# 2. 檢查必要工具
+echo "🔍 正在檢查必要工具..."
+
+if ! command -v dotnet &> /dev/null; then
+    echo "❌ 錯誤: 未安裝 .NET SDK。請先安裝 .NET 10 SDK。"
+    exit 1
+fi
+
+if ! command -v node &> /dev/null; then
+    echo "❌ 錯誤: 未安裝 Node.js。前端編譯需要 Node.js。"
+    exit 1
+fi
+
+if ! command -v pnpm &> /dev/null; then
+    echo "❌ 錯誤: 未安裝 pnpm。本專案強制使用 pnpm 管理前端套件。"
+    echo "💡 安裝方式: npm install -g pnpm"
+    exit 1
+fi
+
+if ! command -v curl &> /dev/null; then
+    echo "❌ 錯誤: 未安裝 curl。部署上傳需要 curl。"
+    exit 1
+fi
+
+if ! command -v zip &> /dev/null; then
+    echo "❌ 錯誤: 未安裝 'zip' 壓縮工具。"
+    exit 1
+fi
+
+# 3. 解析發行設定檔中的認證資訊
+echo "🔑 正在解析發行設定檔中的認證資訊..."
+
+# 擷取含有 MSDeploy 屬性的那一行
+MSDEPLOY_LINE=$(grep -oE '<publishProfile[^>]*publishMethod="MSDeploy"[^>]*>' "$PUBLISH_SETTINGS_FILE" | head -n 1)
+
+if [ -z "$MSDEPLOY_LINE" ]; then
+    echo "❌ 錯誤: 無法在設定檔中找到 MSDeploy 資訊。"
+    exit 1
+fi
+
+# 用正則表達式擷取屬性值
+USER_NAME=$(echo "$MSDEPLOY_LINE" | grep -oE 'userName="[^"]+"' | cut -d'"' -f2)
+USER_PWD=$(echo "$MSDEPLOY_LINE" | grep -oE 'userPWD="[^"]+"' | cut -d'"' -f2)
+PUBLISH_URL=$(echo "$MSDEPLOY_LINE" | grep -oE 'publishUrl="[^"]+"' | cut -d'"' -f2 | sed 's/:443//g')
+
+if [ -z "$USER_NAME" ] || [ -z "$USER_PWD" ] || [ -z "$PUBLISH_URL" ]; then
+    echo "❌ 錯誤: 認證資訊解析失敗，請確認該發行設定檔內容是否正確。"
+    exit 1
+fi
+
+# 取得 App 名稱做為顯示使用
+APP_NAME=$(echo "$MSDEPLOY_LINE" | grep -oE 'profileName="[^"]+"' | cut -d'"' -f2 | sed 's/ - Web Deploy//g')
+
+# 站台網址（destinationAppUrl）；部分設定檔未含此屬性，缺少時以 App 名稱推導預設網域
+SITE_URL=$(echo "$MSDEPLOY_LINE" | grep -oE 'destinationAppUrl="[^"]+"' | cut -d'"' -f2)
+if [ -z "$SITE_URL" ] && [ -n "$APP_NAME" ]; then
+    SITE_URL="https://${APP_NAME}.azurewebsites.net"
+fi
+
+echo "✅ 認證資訊解析成功！"
+echo "🔹 目標 App Service: $APP_NAME"
+[ -n "$SITE_URL" ] && echo "🔹 站台網址: $SITE_URL"
+echo ""
+
+# 4. 清理舊的編譯與壓縮檔案
+echo "🧹 清理舊的暫存檔..."
+rm -rf "$PUBLISH_DIR"
+rm -f "$ZIP_FILE"
+
+# 5. 編譯與發行專案 (會自動編譯前端並複製至 wwwroot)
+echo "📦 開始編譯並發行專案 (此步驟會自動執行前端 pnpm build)..."
+dotnet publish "$PROJECT_PATH" -c Release -o "$PUBLISH_DIR"
+
+# 前端產物是單站台部署的必要條件，缺少即代表 SPA 建置未生效，提前中止免得部署出空站台
+if [ ! -f "$PUBLISH_DIR/wwwroot/index.html" ]; then
+    echo "❌ 錯誤: 發行結果缺少 wwwroot/index.html，前端似乎未成功建置。"
+    exit 1
+fi
+
+# 6. 打包發行結果為 Zip 檔
+echo "🤐 正在打包為 $ZIP_FILE..."
+if [ ! -d "$PUBLISH_DIR" ]; then
+    echo "❌ 錯誤: 找不到發行目錄 $PUBLISH_DIR。"
+    exit 1
+fi
+
+# 切換到發行資料夾內進行壓縮，確保壓縮檔根目錄為應用程式內容
+(cd "$PUBLISH_DIR" && zip -r -q "../$ZIP_FILE" .)
+
+echo "✅ 打包完成：$ZIP_FILE"
+echo ""
+
+# 7. 透過 Kudu 部署 API 上傳部署
+echo "🚀 正在部署至 Azure App Service ($APP_NAME)..."
+echo "🔹 上傳網址: https://$PUBLISH_URL/api/zipdeploy"
+
+# 執行 curl 部署；--fail-with-body 讓 HTTP 錯誤回傳非零結束碼，避免失敗仍顯示成功
+curl -X POST \
+    -u "$USER_NAME:$USER_PWD" \
+    -H "Content-Type: application/zip" \
+    --data-binary @"$ZIP_FILE" \
+    "https://$PUBLISH_URL/api/zipdeploy" \
+    --fail-with-body \
+    --progress-bar
+
+echo ""
+echo "🎉 部署成功！"
+
+# 8. 清理暫存檔
+echo "🧹 清理暫存檔案..."
+rm -rf "$PUBLISH_DIR"
+rm -f "$ZIP_FILE"
+
+echo "========================================================="
+echo "  部署作業全部完成！"
+echo "========================================================="
+if [ -n "$SITE_URL" ]; then
+    echo ""
+    echo "🌐 站台網址: $SITE_URL"
+fi
+echo ""
+echo "💡 提醒："
+{{REMINDERS}}

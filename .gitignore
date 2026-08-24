@@ -1,0 +1,9 @@
+.DS_Store
+
+# 忽略所有安裝的 skill，只保留自建的
+skills/*
+!skills/azure-appservice-deploy-script
+!skills/dotnet-project-setup
+!skills/dotnet-vscode-debug-setup
+!skills/figma-design-alignment
+!skills/spa-backend-single-site

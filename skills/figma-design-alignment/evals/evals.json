@@ -1,0 +1,46 @@
+{
+  "skill_name": "figma-design-alignment",
+  "evals": [
+    {
+      "id": 0,
+      "name": "scale-factor-trap",
+      "prompt": "客戶說我們的驗證碼彈窗跟設計稿不一樣。設計稿在 /Users/sean/Workspace/AsolTech/volvo-line-oa/docs/design/figma/reg-05-otp-empty.png，實作在 /Users/sean/Workspace/AsolTech/volvo-line-oa/frontend/src/components/OtpModal.vue。請比對後告訴我彈窗的寬度、外距、內距應該是多少，以及你怎麼得到這些數字的。不要改檔案，只要分析。",
+      "expected_output": "必須判定出設計稿畫布是 390px 的 1.5 倍（585px），並把量到的 534/26/23 換算成 356/17/15。若直接回報 534/26/23 就是踩到倍率陷阱。",
+      "files": [],
+      "assertions": [
+        "有辨識出設計稿畫布是放大稿（585px 對應 390px，倍率 1.5），而非直接把像素值當 CSS 值",
+        "回報的彈窗寬度是換算後的約 356px（而非未換算的 534px）",
+        "有說明倍率是怎麼推算出來的（量已知元件回推），不是憑空假設",
+        "有實際量測設計稿像素（非目測描述），並提出具體數字佐證"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "alignment-and-contradiction",
+      "prompt": "幫我看一下 /Users/sean/Workspace/AsolTech/volvo-line-oa/docs/design/figma/reg-05-otp-empty.png 這張設計稿裡，「00:59後失效」這行字跟「重新發送」的排版方式，對照 /Users/sean/Workspace/AsolTech/volvo-line-oa/frontend/src/components/OtpModal.vue 的實作。另外 reg-02-form-empty.png 的性別選項第三個是「不透漏」，但元件庫那張 comp-01-gender-states.png 寫「不願透漏」，這個要怎麼處理？不用改程式，跟我說結論。",
+      "expected_output": "排版：應辨識出倒數文字是置中對齊方格（而非 justify-between/justify-center），最好有量測中心點佐證。矛盾：應明確指出兩份稿不一致、不自行決定、詢問使用者要用哪個，並說明要記錄進矛盾清單。",
+      "files": [],
+      "assertions": [
+        "有辨識出倒數文字是「置中對齊方格」而非兩端對齊（justify-between）或整體置中",
+        "有以量測中心點的方式佐證對齊判斷，而非僅憑目視描述",
+        "對於性別文案矛盾，明確指出兩份設計稿不一致，且未自行拍板——或詢問使用者要採用哪一個，或引用已記錄的客戶決議",
+        "有提到要把此矛盾記錄到文件（矛盾清單）以供日後舉證"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "full-workflow-plan",
+      "prompt": "設計師給了新版的會員中心設計稿，我等一下會截圖給你。在那之前，先跟我說你打算怎麼進行對齊工作，包含你會產出哪些文件、放在哪裡、怎麼確認改完是對的。專案在 /Users/sean/Workspace/AsolTech/volvo-line-oa。",
+      "expected_output": "應提出完整流程：先存證設計稿、判定畫布倍率、像素量測、圖示請使用者從 Figma 匯出 SVG、改完用 Playwright 重新量測驗證、產出對照報告與矛盾清單，文件放 docs/design/。應強調有疑問要問使用者。",
+      "files": [],
+      "assertions": [
+        "有提到先保全設計稿存證（避免設計師改稿後無法舉證）",
+        "有提到判定畫布倍率這個步驟",
+        "有提到改完必須重新量測驗證（而非只靠目視或只截圖）",
+        "有提到圖示要請使用者從 Figma 匯出 SVG，並告知存放路徑",
+        "有指明文件產出位置為 docs/design/，並列出要產出哪些文件",
+        "有提到遇到疑問或設計稿矛盾時要詢問使用者，不自行決定"
+      ]
+    }
+  ]
+}
