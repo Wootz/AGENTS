@@ -50,26 +50,54 @@ Ask these in the same upfront message and include the recommended default. If th
    - ✅ **Also supported for Anemic Domain Model** — `XxxManager` / Application orchestration can dispatch events explicitly after the use case commit succeeds. No `AggregateRoot` is needed. Recommended when the Anemic model still has meaningful state transitions that require decoupled in-process side effects (emails, audit logs, projections).
    - ⚠️ **Skip if the domain has no meaningful state transitions that trigger side effects** — unnecessary complexity for simple CRUD flows.
    - If enabled: see Step 3 for the full list of files to scaffold.
-8. **Result Pattern** — ask whether domain operations should return `Result<T>` instead of throwing exceptions for business rule violations. Always provide this recommendation:
-   - ✅ **Recommended** — makes failure paths explicit and avoids exception-driven control flow for expected business errors (e.g., "Order already cancelled"). Pairs well with Rich Domain Model.
-   - Acceptable to skip for Anemic models or simple CRUD services where exception handling is sufficient.
-   - If enabled: scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
+8. **Result Pattern** — **do not ask; always enabled.** Domain operations return `Result<T>` for expected business failures instead of throwing. This applies to Anemic and CRUD services too — "record not found", "email already taken", and "insufficient stock" are expected outcomes, and exceptions are for the unexpected. Scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
+   - Infrastructure faults (DB unreachable, serialization errors) still throw — `Result` is for business outcomes only.
+   - Listed in the confirmation summary (Step 1.5) so the user can opt out there.
 9. **Event-Driven Design (EDD / Integration Events)** — ask whether the system needs event-driven communication between services or bounded contexts. Calibrate the recommendation based on the project nature described in item 0:
    - ✅ **Recommend enabling when**: microservices architecture; integration with external platforms (payment gateways, notification services, logistics); async workflows where services must react to each other's state changes; high-decoupling requirements between bounded contexts.
    - ❌ **Recommend skipping when**: simple monolith or internal tool with no inter-service communication; all business flows are synchronous and self-contained; team lacks message broker operational experience and the project doesn't justify the overhead.
    - Compatible with **both** Rich and Anemic Domain Models — Integration Events are an Application/Infrastructure concern, not a domain modelling concern.
    - If enabled: scaffold only the minimal event contracts needed by the confirmed use case, such as `Application/IntegrationEvents/` and `Application/Interfaces/IEventBus.cs`, plus a broker-specific implementation in `Infrastructure/`. Ask which message broker to target (RabbitMQ, Azure Service Bus, Kafka, etc.).
-10. **Endpoint framework** — default to **Minimal API route groups** because the reference scaffold and rules are built around Minimal APIs. Ask whether to add **FastEndpoints** only if the user wants its request/response pipeline and conventions; adding it introduces another dependency and should be explicit.
-11. **Object mapper** — ask whether to use **Mapperly**, **Mapster**, or no mapper. Always provide this recommendation alongside the question:
-   - ✅ **Mapperly** *(Recommended for most projects)* — Source generator; zero runtime overhead, compile-time type safety, catches mapping errors at build time.
-   - **Mapster** — Runtime mapper; more flexible for dynamic/complex mappings, richer configuration API, easier for conditional/contextual mapping.
-   - **None** — Perfectly valid for simple projects or where explicit manual mapping is preferred for traceability.
+10. **Endpoint framework** — **do not ask; always Minimal API route groups.** The reference scaffold and rules are built around them. Add **FastEndpoints** only if the user raises it themselves; never offer it as a choice.
+11. **Object mapper** — **do not ask; always Mapperly** (`--mapper mapperly`). Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time. Switch to **Mapster** or none only if the user asks; it is offered in the Step 1.5 summary.
    - 🚫 **AutoMapper is strictly forbidden** regardless of user preference.
-12. **OpenTelemetry** — ask whether to integrate OpenTelemetry for distributed tracing, metrics, and logging export. Provide this recommendation:
-   - ✅ **Recommended for production services, microservices, or any service that communicates with other systems** — enables traces, metrics, and logs to be exported to backends like Jaeger, Zipkin, OTLP collectors, Azure Monitor, etc. Even more valuable if Event-Driven Design (item 9) is enabled, as tracing spans across service boundaries.
-   - Optional for simple monoliths or internal tooling with no observability requirements.
-   - If enabled: install `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http`, and an exporter (ask which: OTLP, Console, or Azure Monitor).
+12. **OpenTelemetry** — **do not ask whether to install it; instrumentation is always scaffolded** (`OpenTelemetry.Extensions.Hosting`, `.Instrumentation.AspNetCore`, `.Instrumentation.Http`). With no exporter configured nothing is emitted and development is unaffected, so the cost of having it is near zero while the cost of retrofitting it is a `Program.cs` rewrite.
+   - **Exporter defaults to none** (`--otel none`). Ask which exporter to wire up (OTLP, Console, Azure Monitor) **only** when the user has described an observability backend or a production/microservice deployment; otherwise leave it unset — turning it on later is a configuration change, not a code change.
+   - A project that genuinely wants no OpenTelemetry at all deletes the three packages and the `AddOpenTelemetry()` block; that is cheaper than wiring them in afterwards.
 13. **Auth mechanism** — JWT, API Key, none?
+
+## Step 1.5: Confirm Before Scaffolding
+
+⚠️ **Mandatory. Do not run `scripts/scaffold.sh` until the user has replied to this summary.**
+
+Several items above are applied without being asked (Result Pattern, Minimal API, Mapperly, OpenTelemetry instrumentation). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
+
+Render it as a table with a **Source** column so defaults are visually distinct from the user's own answers:
+
+```
+| Setting            | Value                    | Source    |
+|--------------------|--------------------------|-----------|
+| Project name       | Acme.OrderService        | you       |
+| DB provider        | SQL Server               | you       |
+| DB timezone        | Asia/Taipei              | you       |
+| DB topology        | Single connection        | default   |
+| Domain model       | Rich                     | you       |
+| Domain Events      | Enabled                  | you       |
+| Result Pattern     | Enabled                  | default   |
+| EDD                | Skipped                  | you       |
+| Endpoints          | Minimal API route groups | default   |
+| Object mapper      | Mapperly                 | default   |
+| OpenTelemetry      | Instrumentation, no exporter | default |
+| Auth               | JWT                      | you       |
+```
+
+Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
+
+- Anything marked `default` is changeable — say so explicitly, and name the alternatives for the silent defaults (Result Pattern off; FastEndpoints; Mapster or no mapper; an OTel exporter, or removing OpenTelemetry entirely).
+- If the user changes something, re-render the table with the change applied and confirm again.
+- "Use sensible defaults" earlier in the conversation does **not** skip this step — it fills the table in, and the table is still shown.
+
+---
 
 ## Defaults for "Use Sensible Defaults"
 
@@ -77,12 +105,12 @@ When the user explicitly authorizes defaults, use:
 
 - Rich Domain Model unless they describe a simple CRUD-only internal tool.
 - Domain Events enabled for Rich Domain Model; skipped for Anemic CRUD unless side effects exist.
-- Result Pattern enabled for Rich Domain Model; optional/skipped for simple Anemic CRUD.
+- Result Pattern always enabled (not a defaults-only choice — see item 8).
 - EDD skipped unless there is cross-service or asynchronous integration.
 - Single database connection unless the user confirms read replicas. CommandHandlers use `IXxxRepository` (Domain, aggregates); QueryHandlers use `IXxxReadRepository` (Application, DTOs); neither ever injects a `DbContext`. If read replicas are enabled, the binding routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
 - Minimal API route groups.
 - Mapperly.
-- OpenTelemetry enabled for production/microservice/external-integrating systems; skipped for simple internal tools.
+- OpenTelemetry instrumentation always installed; exporter left as none unless the user names an observability backend.
 - Auth: ask if not specified. Do not assume public or no-auth for production APIs.
 
 ---
@@ -101,6 +129,8 @@ Follow them exactly — do not improvise the structure.
 ---
 
 ## Step 3: Scaffold
+
+⚠️ **Do not start until Step 1.5 has been confirmed by the user.**
 
 Execute the scaffold in this order:
 
