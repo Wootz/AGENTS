@@ -223,7 +223,7 @@ namespace YourProject.Domain.Interfaces;
 
 /// <summary>
 /// Generic repository abstraction for aggregate roots (Rich Domain Model).
-/// Defined in the Domain layer so Domain Services (Managers) can inject repositories directly.
+/// Defined in the Domain layer so Domain Services can inject repositories directly.
 /// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
 /// Repositories operate at the aggregate boundary — never expose IQueryable&lt;T&gt; outside Persistence.
 /// </summary>
@@ -246,7 +246,7 @@ public interface IRepository<T> where T : AggregateRoot<Guid>
 //
 // /// <summary>
 // /// Generic repository abstraction for plain entity POCOs (Anemic Domain Model).
-// /// Defined in the Domain layer so XxxManager classes in DomainServices/ can inject repositories.
+// /// Defined in the Domain layer so Domain Services in DomainServices/ can inject repositories.
 // /// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
 // /// </summary>
 // public interface IRepository<T> where T : class

@@ -1,6 +1,6 @@
 ---
 name: dotnet-project-setup
-description: Scaffold a complete .NET backend project from scratch using the repository's .NET conventions for DDD, Clean Architecture, CQRS, Central Package Management, package selection, testing, and validation. Use this skill whenever the user wants to create or initialize a new .NET solution, ASP.NET Core API, C# backend service, Web API, microservice, or backend project skeleton, even if they only say "new API", "set up backend", "create .NET project", "scaffold service", or similar. This skill is only for new .NET backend codebases, not routine feature work in an existing app.
+description: Scaffold a complete .NET backend project from scratch using the repository's .NET conventions for Clean Architecture, CQRS (with an Anemic or DDD Rich domain model), Central Package Management, package selection, testing, and validation. Use this skill whenever the user wants to create or initialize a new .NET solution, ASP.NET Core API, C# backend service, Web API, microservice, or backend project skeleton, even if they only say "new API", "set up backend", "create .NET project", "scaffold service", or similar. This skill is only for new .NET backend codebases, not routine feature work in an existing app.
 ---
 
 # .NET Project Setup
@@ -41,13 +41,18 @@ Do not run scaffold commands until these are confirmed:
 
 Ask these in the same upfront message and include the recommended default. If the user says "use sensible defaults", apply the recommendations below and state them before scaffolding.
 
-6. **Domain model style** — ask whether to use a **Rich Domain Model** or an **Anemic Domain Model**. Always provide this recommendation:
-   - ✅ **Rich Domain Model** *(Recommended when the domain has complex business rules, invariants to enforce, or multiple aggregates that interact)* — Entities encapsulate behaviour and enforce invariants. Business rules live inside the domain objects (e.g., `Order.AddItem()`, `Order.Cancel()`). Pairs naturally with DDD aggregates and keeps the Application layer thin.
-   - **Anemic Domain Model** *(Suitable for straightforward CRUD-heavy services with little business logic)* — Entities are plain data holders. Business logic is split by complexity: simple CRUD stays in Application-layer handlers; cross-aggregate operations or complex pure-business calculations move into Domain Services. Easier to start with, but tends to scatter rules as complexity grows.
-   - The choice drives concrete enforcement at scaffold time (Rich: private setters + factory methods, no public parameterless ctors; Anemic: POCOs + `XxxManager` domain services with Domain-only dependencies). Those enforcement details are applied in **Step 3** and specified in full in `references/dotnet-rules.md` → **Domain Model Style / DDD Building Blocks** — no need to restate them to the user here.
+6. **Domain model style** — ask which of the two to use. Both are established architectures with published reference implementations; state the recommendation and the reference so the user is choosing between known options, not a house style:
+   - ✅ **Anemic Domain Model** *(Default — recommended unless the domain has invariants that are genuinely hard to keep correct)* — Entities are plain data holders. Business logic lives in Application handlers; genuinely shared domain logic moves to capability-named Domain Services. This is **Clean Architecture / Onion Architecture**, as in Microsoft's **eShopOnWeb**. Call it Clean Architecture + CQRS — **not DDD**; it uses DDD's layering and vocabulary without the Rich Domain Model.
+   - **Rich Domain Model** *(Choose when the domain has complex invariants to enforce or multiple aggregates that interact)* — Entities encapsulate behaviour and enforce invariants (`Order.AddItem()`, `Order.Cancel()`). This is **DDD** proper, as in Microsoft's **eShopOnContainers** Ordering service. Keeps the Application layer thin, at the cost of modelling effort the team has to sustain.
+   - ⚠️ **Do not mix them.** Rich-looking entities whose rules actually live in handlers is neither architecture and has no reference implementation to check against. Whichever is chosen, apply it consistently.
+   - The choice drives concrete enforcement at scaffold time (Rich: private setters + factory methods, no public parameterless ctors; Anemic: POCOs, plus capability-named Domain Services **only where shared domain logic actually exists** — see item 6a). Those details are applied in **Step 3** and specified in `references/dotnet-rules.md` → **Domain Model Style / DDD Building Blocks**.
+
+6a. **Domain Services (Anemic only)** — **do not scaffold one per entity.** A Domain Service is justified only when logic passes both tests: (1) it is a **business rule** — not HTTP, persistence, or formatting, which belong in Infrastructure or stay in the handler; and (2) it is **shared by more than one handler, or complex enough to obscure the handler**. Business logic living directly in an Application handler is normal and correct for the Anemic model — **the handlers are the service layer**. Default to none and extract one when a second handler needs the same rule; the boundary is clearer then than it is up front.
+   - **Name by capability, never by entity, and never with a `Manager` suffix**: `PricingService`, `CreditCheckService` — not `OrderManager`, not `OrderService`. Rationale and the full rule are in `references/dotnet-rules.md` → Domain Model Style.
+   - **For teams coming from a three-tier `API → Manager → Repository` design**: the logic that used to sit in a Manager method moves *into the handler*, one handler per method — it is not re-created as a Domain Service that the handler forwards to. A handler whose body is a single call into a domain service has kept the old architecture and added boilerplate. Say this explicitly when scaffolding for such a team.
 7. **Domain Events** — ask whether to enable Domain Events support. Applies to **both** domain model styles, but the dispatch mechanism differs:
    - ✅ **Recommended for Rich Domain Model** — aggregates queue events internally via `AddDomainEvent()`; `IUnitOfWork.CommitAsync()` commits persistence first, then dispatches domain events after the transaction succeeds. Side effects are fully decoupled from the command handler.
-   - ✅ **Also supported for Anemic Domain Model** — `XxxManager` / Application orchestration can dispatch events explicitly after the use case commit succeeds. No `AggregateRoot` is needed. Recommended when the Anemic model still has meaningful state transitions that require decoupled in-process side effects (emails, audit logs, projections).
+   - ✅ **Also supported for Anemic Domain Model** — the Application handler (or a Domain Service it calls) dispatches events explicitly after the use case commit succeeds. No `AggregateRoot` is needed. Recommended when the Anemic model still has meaningful state transitions that require decoupled in-process side effects (emails, audit logs, projections).
    - ⚠️ **Skip if the domain has no meaningful state transitions that trigger side effects** — unnecessary complexity for simple CRUD flows.
    - If enabled: see Step 3 for the full list of files to scaffold.
 8. **Result Pattern** — **do not ask; always enabled.** Domain operations return `Result<T>` for expected business failures instead of throwing. This applies to Anemic and CRUD services too — "record not found", "email already taken", and "insufficient stock" are expected outcomes, and exceptions are for the unexpected. Scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
@@ -81,7 +86,7 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 | DB provider        | SQL Server               | you       |
 | DB timezone        | Asia/Taipei              | you       |
 | DB topology        | Single connection        | default   |
-| Domain model       | Rich                     | you       |
+| Domain model       | Anemic (Clean Arch + CQRS) | default |
 | Domain Events      | Enabled                  | you       |
 | Result Pattern     | Enabled                  | default   |
 | EDD                | Skipped                  | you       |
@@ -93,7 +98,7 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 
 Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
 
-- Anything marked `default` is changeable — say so explicitly, and name the alternatives for the silent defaults (Result Pattern off; FastEndpoints; Mapster or no mapper; an OTel exporter, or removing OpenTelemetry entirely).
+- Anything marked `default` is changeable — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; Mapster or no mapper; an OTel exporter, or removing OpenTelemetry entirely).
 - If the user changes something, re-render the table with the change applied and confirm again.
 - "Use sensible defaults" earlier in the conversation does **not** skip this step — it fills the table in, and the table is still shown.
 
@@ -103,8 +108,9 @@ Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
 
 When the user explicitly authorizes defaults, use:
 
-- Rich Domain Model unless they describe a simple CRUD-only internal tool.
+- Anemic Domain Model (Clean Architecture + CQRS, eShopOnWeb style) unless the user describes invariants complex enough to justify Rich.
 - Domain Events enabled for Rich Domain Model; skipped for Anemic CRUD unless side effects exist.
+- No Domain Services scaffolded up front under Anemic — added only when shared domain logic appears, named by capability.
 - Result Pattern always enabled (not a defaults-only choice — see item 8).
 - EDD skipped unless there is cross-service or asynchronous integration.
 - Single database connection unless the user confirms read replicas. CommandHandlers use `IXxxRepository` (Domain, aggregates); QueryHandlers use `IXxxReadRepository` (Application, DTOs); neither ever injects a `DbContext`. If read replicas are enabled, the binding routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
@@ -173,7 +179,7 @@ Execute the scaffold in this order:
    - Scaffold `Domain/Interfaces/IRepository.cs` using the **Anemic variant** from `dotnet-domain-template.cs` (constraint: `where T : class`). The `using YourProject.Domain.Entities;` import is not needed.
    - Scaffold `Domain/Interfaces/IUnitOfWork.cs` using the same persistence-agnostic `CommitAsync(CancellationToken)` contract from `dotnet-domain-template.cs`.
    - Add concrete POCO entity classes directly in `Domain/Entities/` — no base class required.
-   - Add Domain Service stub classes (named `XxxManager`) in `Domain/DomainServices/`, for **cross-aggregate operations** or **high-complexity pure business calculations** only — simple CRUD belongs in Application handlers. They inject Domain-defined interfaces only (never Infrastructure/Persistence types); see the full `XxxManager` dependency rules in `references/dotnet-rules.md` → **DDD Building Blocks / Domain Services**.
+   - Do **not** create Domain Service stubs up front. Add a capability-named Domain Service in `Domain/DomainServices/` (e.g. `PricingService`) only for **cross-entity operations** or **high-complexity pure business calculations** that are shared by more than one handler — simple CRUD and single-use logic belong in Application handlers. They inject Domain-defined interfaces only (never Infrastructure/Persistence types); see the naming rule and dependency rules in `references/dotnet-rules.md` → **Domain Model Style / Domain Services**.
    - If Domain Events were enabled (Step 1 item 7): scaffold the following files — use the reference implementations in `dotnet-domain-template.cs` verbatim:
 
      | 檔案 | 專案 | 說明 |
@@ -184,7 +190,7 @@ Execute the scaffold in this order:
      | `Domain/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Domain` | 泛型 handler 介面 `IDomainEventHandler<TEvent>` |
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | in-process 實作；透過 DI 解析並呼叫所有 `IDomainEventHandler<TEvent>` |
 
-     `XxxManager` / Application orchestration 在 repository 操作完成且 use case commit 成功後手動呼叫 `DispatchAsync()`。DI 註冊使用 assembly scanning。Application-layer event handlers 放在 `<ProjectName>.Application/EventHandlers/`，實作 `IDomainEventHandler<TEvent>`.
+     Application handler（或其呼叫的 Domain Service）在 repository 操作完成且 use case commit 成功後手動呼叫 `DispatchAsync()`。DI 註冊使用 assembly scanning。Application-layer event handlers 放在 `<ProjectName>.Application/EventHandlers/`，實作 `IDomainEventHandler<TEvent>`.
    - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>` and `Result` from `dotnet-domain-template.cs` into `Domain/Common/`.
 
    **Both models:**
@@ -255,7 +261,7 @@ These hold regardless of what the user asks:
 - **One class per file** (auxiliary DTO/record/request/response types serving one primary class may co-locate). *(rules.md → Environment & Architecture)*
 - **Persistence & UoW**: EF Core default for aggregate/transactional writes; Dapper/raw SQL for reporting/perf. Everything commits through `IUnitOfWork.CommitAsync()` — handlers never call `SaveChangesAsync()` or manage transactions. No Persistence-local plumbing interfaces. *(rules.md → Data Access)*
 - **CQRS DB routing**: CommandHandlers (incl. their reads) use the write DB; simple QueryHandlers use EF + `AsNoTracking()` on the read DB; complex/reporting queries use Dapper on the read DB unless read-your-writes is required and documented. *(rules.md → CQRS Implementation)*
-- **Domain services**: Rich services are pure (no repository injection); Anemic `XxxManager` lives in Domain, injects only Domain-defined interfaces, never manages transactions or injects Infrastructure types. *(rules.md → DDD Building Blocks)*
+- **Domain services**: Rich services are pure (no repository injection); Anemic Domain Services are capability-named (no `Manager` suffix), live in Domain, inject only Domain-defined interfaces, and never manage transactions or inject Infrastructure types. *(rules.md → DDD Building Blocks)*
 - **Domain-event side effects**: in-process handlers do no irreversible/reliability-critical work directly; use Application orchestration or idempotent retryable background work. *(rules.md → Event-Driven Design)*
 - **Testing**: only `UnitTests` (xUnit + NSubstitute) and `IntegrationTests` (`WebApplicationFactory`, Web SDK). Meaningful tests required — placeholders don't count. *(rules.md → Testing Guidelines)*
 - **Timezone confirmed before any DB schema/migration** — never assume UTC. *(rules.md → Timezone & Time Abstraction)*
