@@ -207,56 +207,63 @@ public abstract class ValueObject
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FILE: Domain/Interfaces/IRepository.cs
+// FILE: Domain/Interfaces/IOrderRepository.cs
 //
-// Two variants — use the one matching the chosen domain model style.
+// There is NO generic IRepository<T>. Every aggregate gets its own named
+// interface declaring only the operations that aggregate actually needs.
+// A generic CRUD interface forces a lowest-common-denominator API (GetAllAsync
+// on a million-row table), gets bypassed the moment a real query appears, and
+// saves no code — the per-aggregate interface has to be written either way.
+// The same rule applies to both Rich and Anemic models; only the entity type
+// referenced by the signatures differs (aggregate root vs. plain POCO).
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ════════════════════════════════════════════════════════════════════════════
-// RICH DOMAIN MODEL variant — T must extend AggregateRoot<Guid>
-// Use when entities extend AggregateRoot<TId> and participate in domain events.
-// ════════════════════════════════════════════════════════════════════════════
 
 using YourProject.Domain.Entities;
 
 namespace YourProject.Domain.Interfaces;
 
 /// <summary>
-/// Generic repository abstraction for aggregate roots (Rich Domain Model).
-/// Defined in the Domain layer so Domain Services can inject repositories directly.
+/// Write-side repository for the Order aggregate.
+/// Defined in the Domain layer so Domain Services can inject it directly.
 /// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
-/// Repositories operate at the aggregate boundary — never expose IQueryable&lt;T&gt; outside Persistence.
+/// Repositories operate at the aggregate boundary — never expose IQueryable&lt;T&gt;
+/// outside Persistence, and never return DTOs (that is IOrderReadRepository's job).
 /// </summary>
-public interface IRepository<T> where T : AggregateRoot<Guid>
+public interface IOrderRepository
 {
-    Task<T?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default);
-    Task AddAsync(T entity, CancellationToken cancellationToken = default);
-    void Update(T entity);
-    void Remove(T entity);
+    /// <summary>Loads a tracked aggregate by identity, or null when absent.</summary>
+    Task<Order?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Aggregate-specific loads belong here, named for the use case they serve.
+    /// Declare only what a CommandHandler or Domain Service actually calls —
+    /// do not pre-emptively add CRUD methods "for completeness".
+    /// </summary>
+    Task<IReadOnlyList<Order>> GetPendingForCustomerAsync(
+        Guid customerId,
+        CancellationToken cancellationToken = default);
+
+    Task AddAsync(Order order, CancellationToken cancellationToken = default);
+
+    void Update(Order order);
+
+    void Remove(Order order);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ANEMIC DOMAIN MODEL variant — T is a plain POCO class
-// Replace the Rich variant above with this version when using Anemic model.
-// No import of YourProject.Domain.Entities is needed.
-// ════════════════════════════════════════════════════════════════════════════
-
-// namespace YourProject.Domain.Interfaces;
+// Notes that apply to every write-side repository interface
 //
-// /// <summary>
-// /// Generic repository abstraction for plain entity POCOs (Anemic Domain Model).
-// /// Defined in the Domain layer so Domain Services in DomainServices/ can inject repositories.
-// /// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
-// /// </summary>
-// public interface IRepository<T> where T : class
-// {
-//     Task<T?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-//     Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default);
-//     Task AddAsync(T entity, CancellationToken cancellationToken = default);
-//     void Update(T entity);
-//     void Remove(T entity);
-// }
+//  - Name it after the aggregate: IOrderRepository, ICustomerRepository.
+//    Do not introduce a shared base interface to "avoid repetition" — the
+//    repetition is the point; each aggregate's surface is deliberately its own.
+//  - No GetAllAsync unless the table is genuinely bounded (lookup/reference
+//    data). Unbounded reads belong on the read side with paging.
+//  - Methods return tracked aggregates. Reads that feed a screen go through
+//    IXxxReadRepository in Application/Interfaces/ and return DTOs.
+//  - Repositories never call SaveChanges — the commit boundary is IUnitOfWork.
+//  - Anemic model: identical shape, with the plain POCO entity type in place
+//    of the aggregate root. No base class or generic constraint is involved.
+// ════════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FILE: Domain/Interfaces/IUnitOfWork.cs
@@ -289,7 +296,7 @@ public interface IUnitOfWork : IAsyncDisposable
 // using Microsoft.EntityFrameworkCore;
 // using Microsoft.EntityFrameworkCore.Storage;
 // using YourProject.Domain.Entities;        // AggregateRoot<T>
-// using YourProject.Domain.Interfaces;      // IUnitOfWork, IRepository<T>, IDomainEventDispatcher
+// using YourProject.Domain.Interfaces;      // IUnitOfWork, IDomainEventDispatcher
 //
 // public sealed class AppUnitOfWork(AppDbContext dbContext, IDomainEventDispatcher dispatcher)
 //     : IUnitOfWork
