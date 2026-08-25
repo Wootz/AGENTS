@@ -318,7 +318,7 @@ NEXT (done by the skill, not this script — they are context-dependent):
   - Copy CQRS core from dotnet-cqrs-template.cs into $S.Application/Cqrs/CQRS.cs (namespace $NAME.Application.Cqrs; replace YourProject -> $NAME)
   - Scaffold domain building blocks from dotnet-domain-template.cs per chosen model style
   - Write appsettings.json / appsettings.Development.json (read-replicas=$READ_REPLICAS)
-  - Create AGENTS.md (root, short) + docs/ai/dotnet-rules.md (full rules)
+  - Create AGENTS.md (root, short) + docs/agents/dotnet-rules.md (full rules)
   - Write meaningful tests, then: dotnet build && dotnet test
 EOF
 if [[ "$READ_REPLICAS" == "true" ]]; then
