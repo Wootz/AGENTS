@@ -22,9 +22,9 @@ Dependency direction (outer → inner):
 
 Key principles:
 
-- **Domain** is the innermost layer: entities, aggregates, value objects, domain services, domain events. Defines `IRepository<T>` and `IUnitOfWork` interfaces. Zero framework references.
-- **Application** orchestrates domain objects via command/query handlers. Domain abstractions (`IRepository<T>`, `IUnitOfWork`, `IDomainEventDispatcher`, and any interface required by Domain Services) live in `Domain`. No direct DB or HTTP calls.
-- **Persistence** implements `IRepository<T>` and `IUnitOfWork` from Domain. Owns EF Core DbContext, Dapper/raw SQL access, migrations, repositories, Unit of Work. Do not create Persistence-local interfaces for internal plumbing.
+- **Domain** is the innermost layer: entities, aggregates, value objects, domain services, domain events. Defines the per-aggregate `IXxxRepository` write-side interfaces and `IUnitOfWork`. Zero framework references.
+- **Application** orchestrates domain objects via command/query handlers. Domain abstractions (the per-aggregate `IXxxRepository` interfaces, `IUnitOfWork`, `IDomainEventDispatcher`, and any interface required by Domain Services) live in `Domain`. No direct DB or HTTP calls.
+- **Persistence** implements the per-aggregate `IXxxRepository` interfaces and `IUnitOfWork` from Domain. Owns EF Core DbContext, Dapper/raw SQL access, migrations, repositories, Unit of Work. Do not create Persistence-local interfaces for internal plumbing.
 - **Infrastructure** owns external service integrations (email, storage, queues, HTTP clients). It implements Domain-defined interfaces when the capability is required by Domain Services, and Application-defined interfaces only for application-only orchestration concerns.
 - **WebApi** is the entry point: endpoints, middleware, DI wiring. Delegates all business decisions to Application through CQRS dispatchers.
 
@@ -51,7 +51,7 @@ Key principles:
 │   │   ├── Enums/
 │   │   ├── Events/                             # Domain events
 │   │   ├── DomainServices/                     # Shared domain logic, capability-named (e.g. PricingService)
-│   │   ├── Interfaces/                         # IRepository<T>, IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>
+│   │   ├── Interfaces/                         # IXxxRepository (one per aggregate), IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>
 │   │   └── <ProjectName>.Domain.csproj
 │   ├── <ProjectName>.Application/              # Use cases — commands, queries, handlers, validators, mappers
 │   │   ├── Cqrs/
@@ -70,7 +70,7 @@ Key principles:
 │   ├── <ProjectName>.Persistence/             # EF Core DbContext, Repositories, Unit of Work
 │   │   ├── Configurations/
 │   │   ├── Migrations/
-│   │   ├── Repositories/                       # Write side — implements Domain's IRepository<T>
+│   │   ├── Repositories/                       # Write side — implements Domain's IXxxRepository interfaces
 │   │   ├── ReadRepositories/                   # Read side — implements Application's IXxxReadRepository
 │   │   ├── UnitOfWork/
 │   │   └── <ProjectName>.Persistence.csproj
@@ -507,7 +507,7 @@ Copy the full contents of `references/dotnet-rules.md` into `docs/agents/dotnet-
 Refer to `references/dotnet-domain-template.cs` (same directory as this file) for canonical implementations. **Which building blocks to scaffold depends on the chosen domain model style.**
 
 **Rich Domain Model** — scaffold all of the following:
-- `IRepository<T>` — Rich variant (`where T : AggregateRoot<Guid>`) in `Domain/Interfaces/`
+- One named `IXxxRepository` per aggregate in `Domain/Interfaces/` (see the `IOrderRepository` example) — **no generic `IRepository<T>`**
 - `IUnitOfWork` — persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
 - `IDomainEventDispatcher` in `Domain/Interfaces/` (if Domain Events enabled)
 - `IDomainEventHandler<TEvent>` in `Domain/Interfaces/` (if Domain Events enabled)
@@ -520,10 +520,10 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - Rich Domain Services, if scaffolded, are pure domain logic and do not inject repositories. Application handlers load required aggregates and pass them into domain methods/services.
 
 **Anemic Domain Model** — scaffold only:
-- `IRepository<T>` — Anemic variant (`where T : class`) in `Domain/Interfaces/` — no import of `YourProject.Domain.Entities` needed
+- One named `IXxxRepository` per entity in `Domain/Interfaces/`, typed against the plain POCO — **no generic `IRepository<T>`**, no base class or generic constraint
 - `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
 - Concrete POCO entities in `Domain/Entities/` with no base class
-- Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — receive only Domain-defined interfaces such as `IRepository<T>`, custom domain capability interfaces, and optionally `IDomainEventDispatcher` via primary constructor injection
+- Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — receive only Domain-defined interfaces such as an `IXxxRepository`, custom domain capability interfaces, and optionally `IDomainEventDispatcher` via primary constructor injection
 - `Result<T>` and `Result` in `Domain/Common/` — if Result Pattern enabled
 - If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Domain/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
 - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject`
@@ -558,9 +558,9 @@ Mechanics specific to scaffolding:
 
 - Register handlers with `services.AddCqrs(typeof(SomeHandler).Assembly)` — assembly scanning only, never line-by-line. No MediatR, no in-memory event buses.
 - All DI classes use **.NET 10 Primary Constructors** — no manual `private readonly` fields.
-- `IUnitOfWork` and `IRepository<T>` are defined in `Domain/Interfaces/` and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
+- `IUnitOfWork` and the per-aggregate `IXxxRepository` interfaces are defined in `Domain/Interfaces/` and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
 - **Persistence abstractions are identical in both topologies.** Handlers never inject a `DbContext` — `Application` references `Domain` only, so a concrete context is not even reachable from a handler. Two abstractions exist regardless of how many databases are deployed:
-  - `IRepository<T>` / `IXxxRepository` — **write side**, defined in `Domain/Interfaces/`, returns tracked aggregate roots, used by CommandHandlers and Domain Services.
+  - `IXxxRepository` — **write side**, one named interface per aggregate in `Domain/Interfaces/`, returns tracked aggregate roots, used by CommandHandlers and Domain Services. There is no generic `IRepository<T>`.
   - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns DTOs/projections, used by QueryHandlers. It lives in `Application` rather than `Domain` because it returns DTOs, which are an Application concept; `Domain` must not know about them.
 
   Both are implemented in `Persistence` (`Repositories/` and `ReadRepositories/`). This keeps the topology a **deployment decision, not an architectural one**: moving between one database and two changes DI registration and `appsettings` only — no handler, no interface, and no query implementation changes. That matters in practice, because projects routinely start on one database and add a replica later, or provision two and collapse back to one on cost.
