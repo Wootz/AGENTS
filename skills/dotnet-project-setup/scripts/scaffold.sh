@@ -22,7 +22,7 @@
 # Usage:
 #   scaffold.sh --name <ProjectName> --db <sqlserver|postgres> \
 #               [--mapper <mapperly|mapster|none>] \
-#               [--otel <none|otlp|console|azure>] \
+#               [--otel <none|otlp|console|azure>]   # exporter only; instrumentation is always installed \
 #               [--read-replicas] [--dir <parent-dir>]
 #
 # Example:
@@ -66,7 +66,7 @@ ROOT="$PARENT_DIR/$NAME"
 S="src/$NAME"        # source path prefix
 T="tests/$NAME"      # tests path prefix
 
-echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel=$OTEL, read-replicas=$READ_REPLICAS)"
+echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL, read-replicas=$READ_REPLICAS)"
 mkdir -p "$ROOT"; cd "$ROOT"
 
 # ---------------------------------------------------------------------------
@@ -254,17 +254,20 @@ case "$MAPPER" in
   none) ;;
 esac
 
-# OpenTelemetry (WebApi) — conditional
-if [[ "$OTEL" != "none" ]]; then
-  add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Extensions.Hosting
-  add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.AspNetCore
-  add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.Http
-  case "$OTEL" in
-    otlp)    add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.OpenTelemetryProtocol ;;
-    console) add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.Console ;;
-    azure)   add "$S.WebApi/$NAME.WebApi.csproj" Azure.Monitor.OpenTelemetry.AspNetCore ;;
-  esac
-fi
+# OpenTelemetry (WebApi) — instrumentation is always installed; --otel picks the
+# exporter only. Without an exporter nothing is emitted and there is no runtime
+# cost, but turning observability on later is a config change rather than a
+# Program.cs rewrite. A project that genuinely wants none can delete these three
+# packages and the AddOpenTelemetry() block — cheaper than wiring them back in.
+add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Extensions.Hosting
+add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.AspNetCore
+add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.Http
+case "$OTEL" in
+  otlp)    add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.OpenTelemetryProtocol ;;
+  console) add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.Console ;;
+  azure)   add "$S.WebApi/$NAME.WebApi.csproj" Azure.Monitor.OpenTelemetry.AspNetCore ;;
+  none)    : ;;  # instrumentation only, no exporter
+esac
 
 # ---------------------------------------------------------------------------
 # 5b. Pin vulnerable transitive packages (generic self-heal).
