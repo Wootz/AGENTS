@@ -193,7 +193,7 @@ dotnet add tests/<ProjectName>.IntegrationTests/ package Microsoft.AspNetCore.Mv
 #    (Infrastructure owns the AddHttpClient + AddStandardResilienceHandler registrations)
 dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.Resilience
 
-# 9. (Conditional) OpenTelemetry — run only if user opted in during Step 1
+# 9. OpenTelemetry — instrumentation is ALWAYS installed; the exporter is optional
 #    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Extensions.Hosting
 #    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Instrumentation.AspNetCore
 #    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Instrumentation.Http
@@ -261,7 +261,7 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
     <!-- HTTP Client Resilience: required for any outbound HTTP call to external APIs -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience"           Version="LATEST_STABLE" />
 
-    <!-- OpenTelemetry: add if user opts in during project setup -->
+    <!-- OpenTelemetry: instrumentation packages are always added; the exporter line only when one is chosen -->
     <!-- <PackageVersion Include="OpenTelemetry.Extensions.Hosting"           Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"   Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.Http"         Version="LATEST_STABLE" /> -->
