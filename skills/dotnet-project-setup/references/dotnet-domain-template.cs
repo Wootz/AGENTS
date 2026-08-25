@@ -318,7 +318,13 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async Task CommitAsync(CancellationToken cancellationToken = default)
 //     {
-//         // 1. Collect pending domain events before saving
+//         // 1. Collect pending domain events before saving.
+//         //    NOTE: AggregateRoot<Guid> is hard-coded here. If the project uses a
+//         //    different aggregate id type (int, long, a strongly-typed id), change
+//         //    this type argument to match — otherwise no events are ever collected
+//         //    and the failure is SILENT: everything commits, nothing dispatches.
+//         //    With several id types in play, mark aggregates with a non-generic
+//         //    IHasDomainEvents interface and query Entries<IHasDomainEvents>().
 //         var aggregates = dbContext.ChangeTracker
 //             .Entries<AggregateRoot<Guid>>()
 //             .Where(e => e.Entity.DomainEvents.Count > 0)
@@ -327,23 +333,61 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //         var domainEvents = aggregates.SelectMany(a => a.DomainEvents).ToList();
 //
-//         // 2. Commit persistence first. Dapper/raw SQL repositories must use
-//         //    dbContext.Database.GetDbConnection() and CurrentTransaction so
-//         //    all writes share this same transaction.
-//         var transaction = await EnsureTransactionAsync(cancellationToken);
-//         try
+//         // 2. Commit persistence first. An explicit transaction is only needed
+//         //    when something OTHER than SaveChangesAsync also writes — a Dapper
+//         //    /raw-SQL repository that called EnsureTransactionAsync(). On its
+//         //    own SaveChangesAsync is already atomic, so opening a transaction
+//         //    for every use case just adds a BEGIN/COMMIT round-trip and holds
+//         //    the connection longer.
+//         if (_transaction is null)
 //         {
 //             await dbContext.SaveChangesAsync(cancellationToken);
-//             await transaction.CommitAsync(cancellationToken);
 //         }
-//         catch
+//         else
 //         {
-//             await transaction.RollbackAsync(cancellationToken);
-//             throw;
+//             try
+//             {
+//                 await dbContext.SaveChangesAsync(cancellationToken);
+//                 await _transaction.CommitAsync(cancellationToken);
+//             }
+//             catch
+//             {
+//                 // Rolling back can itself fail — the connection may already be
+//                 // gone, or the server may have aborted the transaction. Swallow
+//                 // that one: the ORIGINAL exception is what the caller needs to
+//                 // see, and letting the rollback's exception propagate would mask
+//                 // the actual cause of failure.
+//                 try { await _transaction.RollbackAsync(cancellationToken); }
+//                 catch { /* keep the original exception as the reported cause */ }
+//                 throw;
+//             }
+//             finally
+//             {
+//                 // Release it either way: a committed or rolled-back transaction
+//                 // cannot be reused, and leaving it set would make a second
+//                 // CommitAsync() in the same scope reuse a finished transaction
+//                 // (EnsureTransactionAsync's ??= would hand back the dead one),
+//                 // throwing "This transaction has completed; it is no longer
+//                 // usable". A batch job processing several use cases inside one
+//                 // scope hits this immediately.
+//                 await _transaction.DisposeAsync();
+//                 _transaction = null;
+//             }
 //         }
 //
 //         // 3. Dispatch in-process domain events only after the DB transaction
 //         //    commits successfully. Keep handlers local and non-critical.
+//         //
+//         //    ⚠️ The data is ALREADY committed at this point. If a handler throws,
+//         //    this method throws with it and the caller sees a failure even though
+//         //    the write succeeded — the side effect is lost, not the data. That is
+//         //    the deliberate trade-off behind the rule that in-process handlers
+//         //    must not perform irreversible or reliability-critical work (email,
+//         //    external calls, cross-service notifications). Anything that MUST
+//         //    happen belongs in retryable background work keyed off the committed
+//         //    state, or in an integration event published through the outbox —
+//         //    never here. Swallowing handler exceptions is not the fix either: it
+//         //    hides genuine bugs. Let it throw, and keep handlers trivial.
 //         if (domainEvents.Count > 0)
 //             await dispatcher.DispatchAsync(domainEvents, cancellationToken);
 //
@@ -353,8 +397,18 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async ValueTask DisposeAsync()
 //     {
+//         // Reached with a live transaction only when the use case never committed
+//         // — an exception, or an early return after a Dapper repo opened one.
+//         // Disposing an IDbContextTransaction does roll back implicitly, but roll
+//         // back explicitly so the intent is in the code rather than in EF's
+//         // disposal semantics.
 //         if (_transaction is not null)
+//         {
+//             try { await _transaction.RollbackAsync(); }
+//             catch { /* already completed or the connection is gone — nothing to undo */ }
 //             await _transaction.DisposeAsync();
+//             _transaction = null;
+//         }
 //     }
 // }
 //
@@ -405,23 +459,58 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async Task CommitAsync(CancellationToken cancellationToken = default)
 //     {
-//         var transaction = await EnsureTransactionAsync(cancellationToken);
+//         // An explicit transaction is only needed when something OTHER than
+//         // SaveChangesAsync also writes — i.e. a Dapper/raw-SQL repository called
+//         // EnsureTransactionAsync(). SaveChangesAsync is already atomic on its
+//         // own, so opening a transaction unconditionally only costs a BEGIN/COMMIT
+//         // round-trip and holds the connection longer.
+//         if (_transaction is null)
+//         {
+//             await dbContext.SaveChangesAsync(cancellationToken);
+//             return;
+//         }
+//
 //         try
 //         {
 //             await dbContext.SaveChangesAsync(cancellationToken);
-//             await transaction.CommitAsync(cancellationToken);
+//             await _transaction.CommitAsync(cancellationToken);
 //         }
 //         catch
 //         {
-//             await transaction.RollbackAsync(cancellationToken);
+//             // Rolling back can itself fail (connection already gone, transaction
+//             // aborted server-side). Swallow that one — the ORIGINAL exception is
+//             // the cause the caller needs; letting the rollback's exception
+//             // propagate would mask it.
+//             try { await _transaction.RollbackAsync(cancellationToken); }
+//             catch { /* keep the original exception as the reported cause */ }
 //             throw;
+//         }
+//         finally
+//         {
+//             // Release it either way — a completed transaction cannot be reused,
+//             // and leaving it set would make a second CommitAsync() in the same
+//             // scope reuse a dead transaction via EnsureTransactionAsync's ??=,
+//             // throwing "This transaction has completed; it is no longer usable".
+//             // A batch job running several use cases inside one scope hits this
+//             // immediately.
+//             await _transaction.DisposeAsync();
+//             _transaction = null;
 //         }
 //     }
 //
 //     public async ValueTask DisposeAsync()
 //     {
+//         // Only reached with a live transaction when the use case never committed
+//         // — an exception, or an early return after a Dapper repo opened one.
+//         // Disposal rolls back implicitly, but do it explicitly so the intent is
+//         // in the code rather than in EF's disposal semantics.
 //         if (_transaction is not null)
+//         {
+//             try { await _transaction.RollbackAsync(); }
+//             catch { /* already completed or the connection is gone */ }
 //             await _transaction.DisposeAsync();
+//             _transaction = null;
+//         }
 //     }
 // }
 //
