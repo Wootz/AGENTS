@@ -166,10 +166,10 @@ Execute the scaffold in this order:
 6. Create AI guidance files without bloating the root `AGENTS.md`:
    - Create `AGENTS.md` at the **workspace root** — the root directory of the generated solution. **Do NOT place it inside `src/`, `backend/`, or any project subdirectory.**
    - Keep root `AGENTS.md` short. It is an index and mandatory reading policy, not the full rule body.
-   - Create `docs/ai/dotnet-rules.md` and write the full content of `references/dotnet-rules.md` into it.
+   - Create `docs/agents/dotnet-rules.md` and write the full content of `references/dotnet-rules.md` into it.
    - If `~/.agents/AGENTS.md` exists, copy only the globally applicable essentials into root `AGENTS.md`: language, security, documentation alignment, brownfield safety, package manager, Tailwind/frontend rules if applicable, and git commit confirmation. Do not paste the entire global file verbatim.
-   - Root `AGENTS.md` must explicitly say that before .NET/backend/API/database/test changes, agents must read `docs/ai/dotnet-rules.md`.
-   - If a root `AGENTS.md` already exists, do not overwrite it. Append or merge a concise `Required References` section pointing to `docs/ai/dotnet-rules.md`.
+   - Root `AGENTS.md` must explicitly say that before .NET/backend/API/database/test changes, agents must read `docs/agents/dotnet-rules.md`.
+   - If a root `AGENTS.md` already exists, do not overwrite it. Append or merge a concise `Required References` section pointing to `docs/agents/dotnet-rules.md`.
 7. **Compile & validate — mandatory final step.** After all files are written, run the following commands in order and confirm each succeeds before declaring the scaffold complete:
    ```bash
    dotnet build          # must produce 0 errors, 0 warnings
@@ -202,7 +202,7 @@ Before declaring the scaffold complete, verify:
 - [ ] Environment variables used for all secrets — nothing hardcoded
 - [ ] `.gitignore` includes secrets, build output, and local env files
 - [ ] `.config/dotnet-tools.json` exists and is committed (contains `dotnet-ef` local tool)
-- [ ] Root `AGENTS.md` created as a short index/policy file, not a full rules dump; `docs/ai/dotnet-rules.md` contains the complete .NET rules and is referenced from `AGENTS.md`
+- [ ] Root `AGENTS.md` created as a short index/policy file, not a full rules dump; `docs/agents/dotnet-rules.md` contains the complete .NET rules and is referenced from `AGENTS.md`
 - [ ] README created with: project purpose, how to run, how to test
 - [ ] Unit and integration test projects scaffolded; meaningful tests cover generated feature skeletons and user-confirmed workflows
 - [ ] If OpenTelemetry was enabled: OTel packages installed, exporter configured, `Program.cs` wired up
