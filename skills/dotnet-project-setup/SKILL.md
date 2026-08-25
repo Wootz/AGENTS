@@ -34,7 +34,7 @@ Do not run scaffold commands until these are confirmed:
 1. **Project name / namespace root** — e.g. `MyApp`, `Acme.OrderService`
 2. **Database provider** — **SQL Server (preferred default)**, then **PostgreSQL**. Ask before adding provider packages. Do not use SQLite (not used for development here).
 3. **Database timezone** — ⚠️ **MANDATORY before any DB schema or migration work.** Ask explicitly: *"What timezone should the database use? (e.g., UTC, Asia/Taipei)"*
-4. **Database topology** — ask whether the project uses a single database connection or separate master/write and read-only replica connections. If read replicas are used, scaffold separate `ConnectionStrings:Write` and `ConnectionStrings:ReadOnly` configuration and separate write/read persistence registrations.
+4. **Database topology** — ask whether the project uses a single database connection or separate write and read-replica connections. Single connection (default) uses `ConnectionStrings:Default` only; read replicas use `ConnectionStrings:Write` + `ConnectionStrings:Read` with two `DbContext`s. This choice affects **DI registration and `appsettings` only** — the write/read repository split is scaffolded either way, so a project can start on one database and add a replica later (or collapse back to one on cost) without touching handlers, interfaces, or query bodies.
 5. **Features / bounded contexts** — what domains does this service handle? (Helps decide initial module/aggregate names.)
 
 ### Architecture Choices
@@ -79,7 +79,7 @@ When the user explicitly authorizes defaults, use:
 - Domain Events enabled for Rich Domain Model; skipped for Anemic CRUD unless side effects exist.
 - Result Pattern enabled for Rich Domain Model; optional/skipped for simple Anemic CRUD.
 - EDD skipped unless there is cross-service or asynchronous integration.
-- Single database connection unless the user confirms read replicas. If read replicas are enabled, CommandHandlers use the master/write database and QueryHandlers use the read-only database by default.
+- Single database connection unless the user confirms read replicas. CommandHandlers use `IXxxRepository` (Domain, aggregates); QueryHandlers use `IXxxReadRepository` (Application, DTOs); neither ever injects a `DbContext`. If read replicas are enabled, the binding routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
 - Minimal API route groups.
 - Mapperly.
 - OpenTelemetry enabled for production/microservice/external-integrating systems; skipped for simple internal tools.
@@ -195,7 +195,9 @@ Before declaring the scaffold complete, verify:
 - [ ] If Result Pattern enabled: `Result<T>` in `Domain/Common/`; domain methods return `Result` instead of throwing for business violations
 - [ ] If Event-Driven Design enabled: `Application/IntegrationEvents/` scaffolded, `IEventBus` defined in `Application/Interfaces/`, stub implementation in `Infrastructure/`
 - [ ] Exactly one DB provider package is added in `WebApi`, matching the user-selected database
-- [ ] If read replicas are enabled: `WriteDbContext`/write-side `AppDbContext` uses `ConnectionStrings:Write`; `ReadDbContext`/read connection factory uses `ConnectionStrings:ReadOnly`; CommandHandlers and write repositories use only the master/write database; simple EF/LINQ QueryHandlers use the read-only database with `AsNoTracking()`; read-your-writes exceptions are explicitly documented
+- [ ] Exactly one database topology is scaffolded — either `ConnectionStrings:Default` alone, or `Write` + `Read`; never both shapes in the same codebase
+- [ ] Write/read repository split is present regardless of topology: `IXxxRepository` in `Domain/Interfaces/` returning aggregates, `IXxxReadRepository` in `Application/Interfaces/` returning DTOs, both implemented in `Persistence`; no handler injects a `DbContext`, no CommandHandler injects a read repository, no QueryHandler injects a write repository
+- [ ] If read replicas are enabled: `WriteDbContext` and `ReadDbContext` both derive from a shared abstract `AppDbContext` (model configured once) and bind to `ConnectionStrings:Write` / `ConnectionStrings:Read`; write repositories and `IUnitOfWork` take `WriteDbContext`, read repositories take `ReadDbContext`; a strong-consistency query is served by a second read-repository implementation on the write context resolved via a keyed service, never by injecting a `DbContext` into the handler, and the case is named in a comment; migrations and the design-time factory bind to `Write`; health checks probe both connections
 - [ ] `Directory.Packages.props` contains verified latest stable versions, no `LATEST_STABLE` placeholders, no preview/beta/RC packages
 - [ ] Serilog bootstrap logger in `Program.cs`; `UseSerilogRequestLogging` registered; enrichers installed
 - [ ] `appsettings.json` has full Serilog config (sinks, enrichers, level overrides); no hard-coded sink setup in `Program.cs`
