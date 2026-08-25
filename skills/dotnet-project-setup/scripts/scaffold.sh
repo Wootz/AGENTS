@@ -322,5 +322,5 @@ NEXT (done by the skill, not this script — they are context-dependent):
   - Write meaningful tests, then: dotnet build && dotnet test
 EOF
 if [[ "$READ_REPLICAS" == "true" ]]; then
-  echo ">>> READ REPLICAS: use ConnectionStrings:Write + ConnectionStrings:ReadOnly and separate Write/Read DbContext registrations."
+  echo ">>> READ REPLICAS: use ConnectionStrings:Write + ConnectionStrings:Read (no ConnectionStrings:Default) and separate Write/Read DbContext registrations. Routing rules: see docs/agents/dotnet-rules.md -> CQRS Implementation."
 fi
