@@ -37,11 +37,11 @@ Key principles:
 ├── <ProjectName>.slnx                          # Modern solution format
 ├── Directory.Build.props                        # Shared MSBuild properties
 ├── Directory.Packages.props                     # Central Package Management (CPM)
-├── AGENTS.md                                    # Short AI instruction index; points to docs/ai/*.md
+├── AGENTS.md                                    # Short AI instruction index; points to docs/agents/*.md
 ├── .gitignore
 ├── README.md
 ├── docs/
-│   └── ai/
+│   └── agents/
 │       └── dotnet-rules.md                      # Full .NET development rules copied from this skill
 ├── src/
 │   ├── <ProjectName>.Domain/                   # DDD Domain layer — zero framework dependencies
@@ -458,7 +458,7 @@ app.MapArticlesEndpoints();
 Create AI guidance as two layers:
 
 1. Root `AGENTS.md` — short index and mandatory reading policy.
-2. `docs/ai/dotnet-rules.md` — full .NET development and testing rules.
+2. `docs/agents/dotnet-rules.md` — full .NET development and testing rules.
 
 Root `AGENTS.md` should stay concise. Do not paste the entire global `~/.agents/AGENTS.md` or the full `.NET` rules into it. Include only:
 
@@ -467,7 +467,7 @@ Root `AGENTS.md` should stay concise. Do not paste the entire global `~/.agents/
 - Brownfield safety: scan before editing; no unsolicited refactors.
 - Package manager rule: `dotnet` for .NET, `pnpm` for frontend assets.
 - Git safety: never run `git commit` without explicit user approval.
-- Required references: before .NET/backend/API/database/test changes, read `docs/ai/dotnet-rules.md`.
+- Required references: before .NET/backend/API/database/test changes, read `docs/agents/dotnet-rules.md`.
 
 Recommended root `AGENTS.md` shape:
 
@@ -480,7 +480,7 @@ All AI responses must be in Traditional Chinese (正體中文).
 
 Before .NET/backend/API/database/test changes, read:
 
-- docs/ai/dotnet-rules.md
+- docs/agents/dotnet-rules.md
 
 Also read local docs/specs before changing contracts:
 
@@ -497,7 +497,7 @@ Also read local docs/specs before changing contracts:
 - Before completion, run `dotnet build` and `dotnet test`.
 ```
 
-Copy the full contents of `references/dotnet-rules.md` into `docs/ai/dotnet-rules.md`. The rules file must be self-contained and must not reference `~/.agents/` or this skill path.
+Copy the full contents of `references/dotnet-rules.md` into `docs/agents/dotnet-rules.md`. The rules file must be self-contained and must not reference `~/.agents/` or this skill path.
 
 ---
 
