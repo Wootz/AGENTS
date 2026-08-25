@@ -161,7 +161,7 @@ Execute the scaffold in this order:
    **Rich Domain Model:**
    - Copy `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainEvent` from `dotnet-domain-template.cs` into the `Domain` project.
    - Copy `ValueObject` abstract base class into `Domain/ValueObjects/` (for cases requiring custom validation logic; prefer `record` types otherwise).
-   - Scaffold `Domain/Interfaces/IRepository.cs` using the **Rich variant** from `dotnet-domain-template.cs` (constraint: `where T : AggregateRoot<Guid>`).
+   - Scaffold **one named repository interface per aggregate** in `Domain/Interfaces/` (e.g. `IOrderRepository.cs`), following the `IOrderRepository` example in `dotnet-domain-template.cs`. There is no generic `IRepository<T>` — do not create one. Declare only the operations that aggregate's CommandHandlers and Domain Services actually call; methods return tracked aggregate roots.
    - Scaffold `Domain/Interfaces/IUnitOfWork.cs` using the persistence-agnostic `CommitAsync(CancellationToken)` contract from `dotnet-domain-template.cs`.
    - If Domain Events were enabled (Step 1 item 7): scaffold the following files — use the reference implementations in `dotnet-domain-template.cs` verbatim:
 
@@ -176,7 +176,7 @@ Execute the scaffold in this order:
 
    **Anemic Domain Model:**
    - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject` — these building blocks are not used in the Anemic model.
-   - Scaffold `Domain/Interfaces/IRepository.cs` using the **Anemic variant** from `dotnet-domain-template.cs` (constraint: `where T : class`). The `using YourProject.Domain.Entities;` import is not needed.
+   - Scaffold **one named repository interface per entity** in `Domain/Interfaces/` (e.g. `IOrderRepository.cs`), following the `IOrderRepository` example in `dotnet-domain-template.cs` with the plain POCO entity type in place of the aggregate root. There is no generic `IRepository<T>` — do not create one, and no base class or generic constraint is involved.
    - Scaffold `Domain/Interfaces/IUnitOfWork.cs` using the same persistence-agnostic `CommitAsync(CancellationToken)` contract from `dotnet-domain-template.cs`.
    - Add concrete POCO entity classes directly in `Domain/Entities/` — no base class required.
    - Do **not** create Domain Service stubs up front. Add a capability-named Domain Service in `Domain/DomainServices/` (e.g. `PricingService`) only for **cross-entity operations** or **high-complexity pure business calculations** that are shared by more than one handler — simple CRUD and single-use logic belong in Application handlers. They inject Domain-defined interfaces only (never Infrastructure/Persistence types); see the naming rule and dependency rules in `references/dotnet-rules.md` → **Domain Model Style / Domain Services**.
@@ -232,6 +232,7 @@ Before declaring the scaffold complete, verify:
 - [ ] If Event-Driven Design enabled: `Application/IntegrationEvents/` scaffolded, `IEventBus` defined in `Application/Interfaces/`, stub implementation in `Infrastructure/`
 - [ ] Exactly one DB provider package is added in `WebApi`, matching the user-selected database
 - [ ] Exactly one database topology is scaffolded — either `ConnectionStrings:Default` alone, or `Write` + `Read`; never both shapes in the same codebase
+- [ ] No generic `IRepository<T>` exists anywhere; each aggregate has its own named `IXxxRepository` in `Domain/Interfaces/` declaring only the operations its callers use, with no shared base interface
 - [ ] Write/read repository split is present regardless of topology: `IXxxRepository` in `Domain/Interfaces/` returning aggregates, `IXxxReadRepository` in `Application/Interfaces/` returning DTOs, both implemented in `Persistence`; no handler injects a `DbContext`, no CommandHandler injects a read repository, no QueryHandler injects a write repository
 - [ ] If read replicas are enabled: `WriteDbContext` and `ReadDbContext` both derive from a shared abstract `AppDbContext` (model configured once) and bind to `ConnectionStrings:Write` / `ConnectionStrings:Read`; write repositories and `IUnitOfWork` take `WriteDbContext`, read repositories take `ReadDbContext`; a strong-consistency query is served by a second read-repository implementation on the write context resolved via a keyed service, never by injecting a `DbContext` into the handler, and the case is named in a comment; migrations and the design-time factory bind to `Write`; health checks probe both connections
 - [ ] `Directory.Packages.props` contains verified latest stable versions, no `LATEST_STABLE` placeholders, no preview/beta/RC packages
