@@ -23,9 +23,9 @@ Dependency direction (outer → inner):
 Key principles:
 
 - **Domain** is the innermost layer: entities, aggregates, value objects, domain services, domain events. Defines `IRepository<T>` and `IUnitOfWork` interfaces. Zero framework references.
-- **Application** orchestrates domain objects via command/query handlers. Domain abstractions (`IRepository<T>`, `IUnitOfWork`, `IDomainEventDispatcher`, and any interface required by Domain Managers) live in `Domain`. No direct DB or HTTP calls.
+- **Application** orchestrates domain objects via command/query handlers. Domain abstractions (`IRepository<T>`, `IUnitOfWork`, `IDomainEventDispatcher`, and any interface required by Domain Services) live in `Domain`. No direct DB or HTTP calls.
 - **Persistence** implements `IRepository<T>` and `IUnitOfWork` from Domain. Owns EF Core DbContext, Dapper/raw SQL access, migrations, repositories, Unit of Work. Do not create Persistence-local interfaces for internal plumbing.
-- **Infrastructure** owns external service integrations (email, storage, queues, HTTP clients). It implements Domain-defined interfaces when the capability is required by Domain Managers, and Application-defined interfaces only for application-only orchestration concerns.
+- **Infrastructure** owns external service integrations (email, storage, queues, HTTP clients). It implements Domain-defined interfaces when the capability is required by Domain Services, and Application-defined interfaces only for application-only orchestration concerns.
 - **WebApi** is the entry point: endpoints, middleware, DI wiring. Delegates all business decisions to Application through CQRS dispatchers.
 
 ---
@@ -70,7 +70,8 @@ Key principles:
 │   ├── <ProjectName>.Persistence/             # EF Core DbContext, Repositories, Unit of Work
 │   │   ├── Configurations/
 │   │   ├── Migrations/
-│   │   ├── Repositories/
+│   │   ├── Repositories/                       # Write side — implements Domain's IRepository<T>
+│   │   ├── ReadRepositories/                   # Read side — implements Application's IXxxReadRepository
 │   │   ├── UnitOfWork/
 │   │   └── <ProjectName>.Persistence.csproj
 │   └── <ProjectName>.WebApi/                  # Entry point — routes, middleware
@@ -557,17 +558,115 @@ Mechanics specific to scaffolding:
 
 - Register handlers with `services.AddCqrs(typeof(SomeHandler).Assembly)` — assembly scanning only, never line-by-line. No MediatR, no in-memory event buses.
 - All DI classes use **.NET 10 Primary Constructors** — no manual `private readonly` fields.
-- `IUnitOfWork` and `IRepository<T>` are defined in `Domain/Interfaces/` and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`.
-- **Single connection** (default): one write-side `AppDbContext` using `ConnectionStrings:Default`; QueryHandlers share the same DB but still use `AsNoTracking()` for EF/LINQ reads.
-- **Read replicas enabled**: scaffold separate registrations — a write-side context on `ConnectionStrings:Write` and a read-side context on `ConnectionStrings:ReadOnly`. Never inject the read context into CommandHandlers or write repositories.
+- `IUnitOfWork` and `IRepository<T>` are defined in `Domain/Interfaces/` and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
+- **Persistence abstractions are identical in both topologies.** Handlers never inject a `DbContext` — `Application` references `Domain` only, so a concrete context is not even reachable from a handler. Two abstractions exist regardless of how many databases are deployed:
+  - `IRepository<T>` / `IXxxRepository` — **write side**, defined in `Domain/Interfaces/`, returns tracked aggregate roots, used by CommandHandlers and Domain Services.
+  - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns DTOs/projections, used by QueryHandlers. It lives in `Application` rather than `Domain` because it returns DTOs, which are an Application concept; `Domain` must not know about them.
+
+  Both are implemented in `Persistence` (`Repositories/` and `ReadRepositories/`). This keeps the topology a **deployment decision, not an architectural one**: moving between one database and two changes DI registration and `appsettings` only — no handler, no interface, and no query implementation changes. That matters in practice, because projects routinely start on one database and add a replica later, or provision two and collapse back to one on cost.
+
+- **Single connection** (default): one `AppDbContext` on `ConnectionStrings:Default`. Both `IXxxRepository` and `IXxxReadRepository` are implemented against it; read-side implementations still use `AsNoTracking()`.
+
+- **Read replicas enabled**: two contexts sharing one model by inheritance, registered against different connections. The read-side implementations switch to `ReadDbContext`; their query bodies are unchanged.
+
+  Derive both from a common abstract base so `OnModelCreating` and the entity configurations are written **once** — two independently configured contexts over the same tables drift, and a missed change on one side produces behaviour differences that are hard to trace.
+
+  ```csharp
+  // Persistence/AppDbContext.cs — shared model, never registered in DI directly.
+  public abstract class AppDbContext(DbContextOptions options) : DbContext(options)
+  {
+      protected override void OnModelCreating(ModelBuilder modelBuilder)
+          => modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+  }
+
+  // Persistence/WriteDbContext.cs — the only context that may write.
+  public sealed class WriteDbContext(DbContextOptions<WriteDbContext> options)
+      : AppDbContext(options);
+
+  // Persistence/ReadDbContext.cs — read-only by construction, not by convention.
+  public sealed class ReadDbContext : AppDbContext
+  {
+      public ReadDbContext(DbContextOptions<ReadDbContext> options) : base(options)
+          => ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+      public override int SaveChanges()
+          => throw new InvalidOperationException("ReadDbContext is read-only.");
+
+      public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+          => throw new InvalidOperationException("ReadDbContext is read-only.");
+  }
+  ```
+
+  The base **must** take the non-generic `DbContextOptions`. `DbContextOptions<T>` is invariant, so a derived context declaring `DbContextOptions<ReadDbContext>` cannot pass it to a base expecting `DbContextOptions<WriteDbContext>` — that is a compile error, not a runtime one. Each concrete context keeps its own generic options type so DI can bind them to different connections.
+
+  `ReadDbContext` defaults to `NoTracking`, so a forgotten `AsNoTracking()` is not a bug, and `SaveChanges` on the read side throws instead of silently attempting a write against a replica.
+
   ```csharp
   builder.Services.AddDbContext<WriteDbContext>(options =>
       options.UseSqlServer(builder.Configuration.GetConnectionString("Write")));
 
   builder.Services.AddDbContext<ReadDbContext>(options =>
-      options.UseSqlServer(builder.Configuration.GetConnectionString("ReadOnly")));
+      options.UseSqlServer(builder.Configuration.GetConnectionString("Read")));
   ```
   Replace `UseSqlServer` with the chosen provider (`UseNpgsql` for PostgreSQL).
+
+  **Do not add `DbSet`s to `ReadDbContext` or override its `OnModelCreating`.** Both contexts must expose exactly the same model; once they diverge EF treats them as different schemas and migration comparison breaks. Shape query results with `.Select()` projections or keyless entity types instead of altering the inherited model.
+
+  **Which connection a handler uses** is normative and lives in `dotnet-rules.md` → CQRS Implementation → *Write vs Read routing*. Scaffold only the mechanism it depends on:
+
+  - The **only** difference between the two topologies is which context the read-side implementation takes. The query body is identical:
+    ```csharp
+    // Persistence/ReadRepositories/OrderReadRepository.cs
+    // Single connection:  (AppDbContext db)
+    // Read/write split:   (ReadDbContext db)   <-- the entire change
+    public sealed class OrderReadRepository(ReadDbContext db) : IOrderReadRepository
+    {
+        public Task<IReadOnlyList<OrderListItemDto>> GetPagedAsync(...) =>
+            db.Orders.AsNoTracking()
+              .Select(o => new OrderListItemDto(o.Id, o.Code, o.Total))
+              .ToListAsync(cancellationToken);
+    }
+    ```
+  - **Strong-consistency queries** (the five cases in `dotnet-rules.md`) must not reach for `WriteDbContext` from the handler — `Application` cannot see it. Register a second implementation of the same read interface bound to the write context and resolve it by key, so the choice stays in `Persistence` and the handler still depends only on an Application-layer abstraction:
+    ```csharp
+    // Persistence — same query code, write connection.
+    public sealed class OrderStrongReadRepository(WriteDbContext db) : IOrderReadRepository { /* ... */ }
+
+    services.AddScoped<IOrderReadRepository, OrderReadRepository>();
+    services.AddKeyedScoped<IOrderReadRepository, OrderStrongReadRepository>("strong");
+
+    // Application — the case is named at the injection point.
+    // Strong consistency, case (1): backs the detail page the user is redirected
+    // to immediately after CreateOrderCommand — must not read a lagging replica.
+    public sealed class GetOrderByIdQueryHandler(
+        [FromKeyedServices("strong")] IOrderReadRepository orders)
+        : IQueryHandler<GetOrderByIdQuery, Result<OrderDto>> { /* ... */ }
+    ```
+    Under a single connection the keyed registration points at the same context, so handlers written this way need no change if a replica is added later.
+  - EF Core migrations and the design-time factory bind to the **Write** connection explicitly, so `dotnet ef` never issues DDL against a replica. With two contexts present `dotnet ef` can no longer infer which one to use, so migration commands must name it — `dotnet ef migrations add <Name> --context WriteDbContext` — and only `WriteDbContext` gets a design-time factory:
+    ```csharp
+    public sealed class WriteDbContextFactory : IDesignTimeDbContextFactory<WriteDbContext>
+    {
+        public WriteDbContext CreateDbContext(string[] args)
+        {
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json")
+                .AddJsonFile("appsettings.Development.json", optional: true)
+                .AddEnvironmentVariables()
+                .Build();
+
+            var options = new DbContextOptionsBuilder<WriteDbContext>()
+                .UseSqlServer(configuration.GetConnectionString("Write"))
+                .Options;
+
+            return new WriteDbContext(options);
+        }
+    }
+    ```
+  - Health checks probe **both** connections separately; a healthy write connection says nothing about the replica.
+  - `IUnitOfWork` and every write-side repository take `WriteDbContext`; `ReadDbContext` is taken only by read-side repository implementations. Both stay inside `Persistence`.
+  - A transaction never spans `WriteDbContext` and `ReadDbContext`. `IUnitOfWork` owns the write context only.
 
 ---
 
@@ -621,7 +720,7 @@ If read replicas are enabled during setup, replace `ConnectionStrings:Default` w
 {
   "ConnectionStrings": {
     "Write": "",
-    "ReadOnly": ""
+    "Read": ""
   }
 }
 ```
@@ -644,9 +743,9 @@ If read replicas are enabled during setup, replace `ConnectionStrings:Default` w
 }
 ```
 
-If read replicas are enabled during setup, use the same `Write` / `ReadOnly` shape in `appsettings.Development.json`.
+If read replicas are enabled during setup, use the same `Write` / `Read` shape in `appsettings.Development.json`.
 
-In CI/production, inject `ConnectionStrings__Default` as an environment variable for single-connection deployments. For read/write split deployments, inject `ConnectionStrings__Write` and `ConnectionStrings__ReadOnly`. Never commit real connection strings.
+In CI/production, inject `ConnectionStrings__Default` as an environment variable for single-connection deployments. For read/write split deployments, inject `ConnectionStrings__Write` and `ConnectionStrings__Read`. Never commit real connection strings.
 
 If automated auth tests require test backdoors, add a non-production-only `Testing` config section (for example `FixedOtp` or `EnableTestUserHeader`) and middleware that rejects those bypasses outside Development/Test environments. Do not scaffold this by default.
 
