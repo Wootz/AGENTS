@@ -50,7 +50,7 @@ Key principles:
 │   │   ├── ValueObjects/                       # Immutable value objects (record types)
 │   │   ├── Enums/
 │   │   ├── Events/                             # Domain events
-│   │   ├── DomainServices/                     # Cross-aggregate domain logic (Anemic: XxxManager)
+│   │   ├── DomainServices/                     # Shared domain logic, capability-named (e.g. PricingService)
 │   │   ├── Interfaces/                         # IRepository<T>, IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>
 │   │   └── <ProjectName>.Domain.csproj
 │   ├── <ProjectName>.Application/              # Use cases — commands, queries, handlers, validators, mappers
@@ -523,7 +523,7 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `IRepository<T>` — Anemic variant (`where T : class`) in `Domain/Interfaces/` — no import of `YourProject.Domain.Entities` needed
 - `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
 - Concrete POCO entities in `Domain/Entities/` with no base class
-- `XxxManager` stub classes in `Domain/DomainServices/` — receive only Domain-defined interfaces such as `IRepository<T>`, custom domain capability interfaces, and optionally `IDomainEventDispatcher` via primary constructor injection
+- Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — receive only Domain-defined interfaces such as `IRepository<T>`, custom domain capability interfaces, and optionally `IDomainEventDispatcher` via primary constructor injection
 - `Result<T>` and `Result` in `Domain/Common/` — if Result Pattern enabled
 - If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Domain/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
 - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject`
@@ -539,8 +539,8 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 In-process domain event handlers must not perform irreversible or reliability-critical side effects directly. For simple workflows, perform external calls through explicit Application orchestration. If asynchronous processing is required, use retryable background work with idempotency.
 
 **Domain Events dispatch flow — Anemic Domain Model (manual):**
-1. `XxxManager` injects `IDomainEventDispatcher` via primary constructor.
-2. After completing repository operations and after the use case commit succeeds, Manager/Application orchestration explicitly calls `await dispatcher.DispatchAsync(new[] { new SomethingHappenedEvent(...) }, ct)` for in-process side effects only.
+1. The Application handler, or a Domain Service it calls, injects `IDomainEventDispatcher` via primary constructor.
+2. After completing repository operations and after the use case commit succeeds, the handler or Domain Service explicitly calls `await dispatcher.DispatchAsync(new[] { new SomethingHappenedEvent(...) }, ct)` for in-process side effects only.
 3. `DomainEventDispatcher` (Infrastructure) resolves and invokes `IDomainEventHandler<TEvent>` instances from DI.
 4. Application-layer event handlers execute side effects.
 
