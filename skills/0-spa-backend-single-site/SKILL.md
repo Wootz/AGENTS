@@ -1,5 +1,5 @@
 ---
-name: spa-backend-single-site
+name: 0-spa-backend-single-site
 description: 將獨立的前端 SPA（Vue/React/Vite）與 ASP.NET Core 後端整合成單一站台部署，讓 dotnet publish 自動建置前端並收進 wwwroot。當使用者提到「前後端整合」「只想部署一個站台」「合併成單一站台」「前端放進 wwwroot」「不想分開部署前後端」「單一 App Service」，或詢問如何讓後端同時提供 API 與前端靜態檔時，務必使用此技能。即使使用者只說「整合前端」或「一個站台就好」而未細講技術細節，也應該觸發。
 ---
 

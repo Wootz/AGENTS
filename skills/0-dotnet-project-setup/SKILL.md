@@ -1,5 +1,5 @@
 ---
-name: dotnet-project-setup
+name: 0-dotnet-project-setup
 description: Scaffold a complete .NET backend project from scratch using the repository's .NET conventions for Clean Architecture, CQRS (with an Anemic or DDD Rich domain model), Central Package Management, package selection, testing, and validation. Use this skill whenever the user wants to create or initialize a new .NET solution, ASP.NET Core API, C# backend service, Web API, microservice, or backend project skeleton, even if they only say "new API", "set up backend", "create .NET project", "scaffold service", or similar. This skill is only for new .NET backend codebases, not routine feature work in an existing app.
 ---
 
