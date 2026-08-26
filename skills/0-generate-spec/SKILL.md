@@ -1,5 +1,5 @@
 ---
-name: generate-spec
+name: 0-generate-spec
 description: 依 SRS、需求訪談紀錄或設計稿產出 Spec Kit 格式的功能規格（User Story + Acceptance Scenarios + FR 功能需求 + Success Criteria），存入 docs/specs/。SRS → Spec → Plan → Code → Verify 流程的第二階段。只寫 WHAT 與 WHY，不寫 HOW；需求不明處以 [NEEDS CLARIFICATION] 標記，不自行臆測。
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: figma-design-alignment
+name: 0-figma-design-alignment
 description: 把前端畫面對齊 Figma 設計稿，並留下可對客戶舉證的文件。務必在使用者提到「對齊設計稿」「跟 Figma 不一樣」「客戶說畫面不對」「設計稿比對」「UI 跟設計不符」「照設計稿改」時使用；使用者貼上設計稿截圖、Figma 連結，或抱怨畫面與設計有落差時也要用。涵蓋：取得設計稿（Figma MCP 或請使用者截圖）、像素級量測比對、SVG 圖示交接、設計稿存證、矛盾記錄、改完的截圖驗收報告。
 ---
 

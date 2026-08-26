@@ -1,5 +1,5 @@
 ---
-name: azure-appservice-deploy-script
+name: 0-azure-appservice-deploy-script
 description: 建立一鍵部署 .NET 專案到 Azure App Service 的 bash 腳本，透過 Azure Portal 下載的發行設定檔（.publishsettings）解析認證，用 Kudu zipdeploy API 上傳。當使用者提到「deploy-azure.sh」「部署到 Azure」「App Service 部署腳本」「publish profile 部署」「一鍵部署」「zipdeploy」，或想要不裝 Azure CLI 就能部署時，務必使用此技能。使用者若只說「加一個部署腳本」或「幫我弄個上 Azure 的 sh」也應該觸發。
 ---
 

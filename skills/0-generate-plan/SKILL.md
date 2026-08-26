@@ -1,5 +1,5 @@
 ---
-name: generate-plan
+name: 0-generate-plan
 description: 依已核可的 Spec 產出 Spec Kit 格式的實作計畫與任務清單（Technical Context + 資料模型 + 依 User Story 分組的 Tasks），存入 docs/plans/。SRS → Spec → Plan → Code → Verify 流程的第三階段，Plan 與 Tasks 合併於同一份文件。
 ---
 
