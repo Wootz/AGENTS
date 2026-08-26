@@ -1,4 +1,5 @@
 .DS_Store
+.claude/
 
 # 忽略所有安裝的 skill，只保留自建的
 skills/*
@@ -6,4 +7,6 @@ skills/*
 !skills/dotnet-project-setup
 !skills/dotnet-vscode-debug-setup
 !skills/figma-design-alignment
+!skills/generate-plan
+!skills/generate-spec
 !skills/spa-backend-single-site
