@@ -1,5 +1,5 @@
 ---
-name: dotnet-vscode-debug-setup
+name: 0-dotnet-vscode-debug-setup
 description: 建立 ASP.NET Core + 前端 SPA 專案的 VS Code 偵錯設定（launch.json 與 tasks.json），提供「單站台模式」與「前後端同時啟動」兩個選項，後端 C# 可下中斷點並在啟動後自動開瀏覽器。當使用者提到「設定 VS Code debug」「launch.json」「tasks.json」「按 F5 啟動」「要能下中斷點」「一鍵啟動前後端」，或抱怨中斷點沒作用、F5 啟動失敗、偵錯清單選項太多或名稱看不懂、啟動後沒有自動開瀏覽器、偵錯讀不到 appsettings.Development.json 時，務必使用此技能。使用者若只說「幫我設定偵錯」或「弄一個 F5 就能跑的設定」也應該觸發。
 ---
 

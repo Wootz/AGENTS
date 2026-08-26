@@ -1,6 +1,6 @@
 # .NET Backend Project Scaffold Guide
 
-> Referenced by `dotnet-project-setup` skill. Read this file in full before scaffolding a .NET project.
+> Referenced by `0-dotnet-project-setup` skill. Read this file in full before scaffolding a .NET project.
 
 ## Prerequisites
 

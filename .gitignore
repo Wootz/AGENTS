@@ -3,10 +3,10 @@
 
 # 忽略所有安裝的 skill，只保留自建的
 skills/*
-!skills/azure-appservice-deploy-script
-!skills/dotnet-project-setup
-!skills/dotnet-vscode-debug-setup
-!skills/figma-design-alignment
-!skills/generate-plan
-!skills/generate-spec
-!skills/spa-backend-single-site
+!skills/0-azure-appservice-deploy-script
+!skills/0-dotnet-project-setup
+!skills/0-dotnet-vscode-debug-setup
+!skills/0-figma-design-alignment
+!skills/0-generate-plan
+!skills/0-generate-spec
+!skills/0-spa-backend-single-site
