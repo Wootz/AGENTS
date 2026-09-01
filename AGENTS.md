@@ -9,6 +9,7 @@ All AI responses must be in **Traditional Chinese (正體中文)**.
 - 📦 **Dependencies**: Latest **stable** versions only (no preview/beta). Commercially friendly licenses only (MIT, Apache 2.0); GPL-like copyleft is prohibited.
 - 📄 **Pagination**: param `page` → **1-based**; param `pageIndex` → **0-based**.
 - 🔒 **Git**: Obtain explicit user approval before any `git commit` (including all variants); automatic commits are strictly forbidden. `git push` is strictly forbidden.
+- ✍️ **Commit Message**: Contain only the change description itself. Never append AI/tool attribution trailers such as `Co-Authored-By`, `Claude-Session`, `Generated with ...`, or any similar footer.
 - 📌 **TODO Marker**: Mark every pending task or open decision in code with a `TODO: xxxxx` comment.
 
 ## 📖 Docs-First Alignment
