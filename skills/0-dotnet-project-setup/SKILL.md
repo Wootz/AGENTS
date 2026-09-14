@@ -15,7 +15,14 @@ Before asking questions or writing files:
 
 1. Check whether the target directory already exists.
 2. If it exists, scan local docs first (`docs/`, `doc/`, `architecture/`, `specs/`, `README.md`, `AGENTS.md`) and read any files that define architecture, API contracts, DB conventions, or UI/API naming.
-3. If local documentation conflicts with this skill or `references/`, report the conflict and ask the user how to proceed before changing code.
+3. If local documentation conflicts with this skill or `references/`, **the user decides — always ask.** Neither side wins by default: not the docs, not this skill. Report **all** conflicts at once as a table of *item / what the docs say / what this skill says / consequence*, then ask a single question and wait:
+
+   > "本地文件與 skill 預設有 N 處衝突。以何者為準？"
+   > (a) **以文件為準** — skill 只補不衝突的部分
+   > (b) **以 skill 為準** — 先更新文件，再依 skill 建置
+   > (c) **逐項裁示**
+
+   Present the options neutrally — do not mark one as recommended or likely-correct. Do not resolve any conflict on your own judgement, and do not treat a documented architectural decision as a defect to correct. Ask once with everything in it rather than walking the user through conflicts one at a time across several turns; that is what makes this step expensive. **Write nothing until the answer arrives.**
 4. If the target is a truly new empty directory with no local docs, proceed with the reference files in this skill.
 
 ## Step 1: Capture Intent
@@ -33,9 +40,22 @@ Do not run scaffold commands until these are confirmed:
 
 1. **Project name / namespace root** — e.g. `MyApp`, `Acme.OrderService`
 2. **Database provider** — **SQL Server (preferred default)**, then **PostgreSQL**. Ask before adding provider packages. Do not use SQLite (not used for development here).
-3. **Database timezone** — ⚠️ **MANDATORY before any DB schema or migration work.** Ask explicitly: *"What timezone should the database use? (e.g., UTC, Asia/Taipei)"*
-4. **Database topology** — ask whether the project uses a single database connection or separate write and read-replica connections. Single connection (default) uses `ConnectionStrings:Default` only; read replicas use `ConnectionStrings:Write` + `ConnectionStrings:Read` with two `DbContext`s. This choice affects **DI registration and `appsettings` only** — the write/read repository split is scaffolded either way, so a project can start on one database and add a replica later (or collapse back to one on cost) without touching handlers, interfaces, or query bodies.
+3. **Database timezone** — ⚠️ **MANDATORY — ask in Step 1, not later.** Ask explicitly: *"What timezone should the database use? (e.g., UTC, Asia/Taipei)"* It is not only a schema concern: it fixes the API's time contract (what `createdAt` in a response means) and therefore belongs in the README before any endpoint or document is written. A project that writes docs first and code later will otherwise reach migrations with the question still open.
+4. **Database topology** — **do not ask; always scaffold `ConnectionStrings:Write` + `ConnectionStrings:Read` with a single `DbContext`.** There is no `ConnectionStrings:Default`. When there is no replica — the normal case — both keys hold the **same value** and only `Write` is read by the code; `Read` is a declared-but-unused key.
+
+   This is the default because it costs nothing now and removes the expensive part of adding a replica later. The `appsettings` shape, the deployment secrets, and the env-var names (`ConnectionStrings__Write` / `__Read`) are correct from day one, so introducing a replica is a DI change plus a config value — not a rename that touches every environment, pipeline, and secret store.
+
+   Do **not** scaffold two `DbContext`s to "prepare" for a replica. Two contexts over one database is a fake separation: it doubles the model configuration surface and invites drift while delivering no isolation. One context stays honest about what is actually deployed.
+
+   - **Upgrading to a real replica** (`--read-replicas`): add a `ReadDbContext` bound to `Read`, move the read-repository implementations onto it, and point migrations and the design-time factory at `Write`. Handlers, interfaces, and query bodies do not change — that is what the always-present read/write repository split buys. Details in `references/dotnet-scaffold.md` → CQRS Pattern.
+   - State in the README which shape is live, and that `Read` is currently unused when it is.
 5. **Features / bounded contexts** — what domains does this service handle? (Helps decide initial module/aggregate names.)
+
+5a. **Directory grouping** — derive it from the answer to item 5 and confirm; do not ask blind:
+   - **By technical type** *(default)* — `Application/Commands/`, `Queries/`, `Domain/Entities/`… Right for one or a few feature areas.
+   - **By module (vertical slice)** — `Application/Modules/{Module}/Commands/`… Right once the service has many distinct business modules (roughly 5+, or a requirements doc that already enumerates them). At that size a flat `Commands/` folder accumulates hundreds of files and every change means hopping between five technical folders.
+   - Modules follow **aggregate boundaries**, not tables, or the module count explodes.
+   - `Persistence` and `Infrastructure` are **never** split by module — see `references/dotnet-scaffold.md` → Directory Structure for the layout and why.
 
 ### Architecture Choices
 
@@ -45,6 +65,7 @@ Ask these in the same upfront message and include the recommended default. If th
    - ✅ **Anemic Domain Model** *(Default — recommended unless the domain has invariants that are genuinely hard to keep correct)* — Entities are plain data holders. Business logic lives in Application handlers; genuinely shared domain logic moves to capability-named Domain Services. This is **Clean Architecture / Onion Architecture**, as in Microsoft's **eShopOnWeb**. Call it Clean Architecture + CQRS — **not DDD**; it uses DDD's layering and vocabulary without the Rich Domain Model.
    - **Rich Domain Model** *(Choose when the domain has complex invariants to enforce or multiple aggregates that interact)* — Entities encapsulate behaviour and enforce invariants (`Order.AddItem()`, `Order.Cancel()`). This is **DDD** proper, as in Microsoft's **eShopOnContainers** Ordering service. Keeps the Application layer thin, at the cost of modelling effort the team has to sustain.
    - ⚠️ **Do not mix them.** Rich-looking entities whose rules actually live in handlers is neither architecture and has no reference implementation to check against. Whichever is chosen, apply it consistently.
+   - ⚠️ **Anemic's known failure mode is rule scatter.** With no entity to own an invariant, the same rule gets re-implemented in each handler that needs it, and they drift. Say this when recommending Anemic, along with the two countermeasures: (a) every state transition goes through **one** entry point — never let a second handler assign the status field directly; (b) the moment a rule is needed by a second handler, extract it to a capability-named Domain Service (item 6a) rather than copying it. Neither is enforced by the compiler, so they belong in the project's `AGENTS.md`/review checklist.
    - The choice drives concrete enforcement at scaffold time (Rich: private setters + factory methods, no public parameterless ctors; Anemic: POCOs, plus capability-named Domain Services **only where shared domain logic actually exists** — see item 6a). Those details are applied in **Step 3** and specified in `references/dotnet-rules.md` → **Domain Model Style / DDD Building Blocks**.
 
 6a. **Domain Services (Anemic only)** — **do not scaffold one per entity.** A Domain Service is justified only when logic passes both tests: (1) it is a **business rule** — not HTTP, persistence, or formatting, which belong in Infrastructure or stay in the handler; and (2) it is **shared by more than one handler, or complex enough to obscure the handler**. Business logic living directly in an Application handler is normal and correct for the Anemic model — **the handlers are the service layer**. Default to none and extract one when a second handler needs the same rule; the boundary is clearer then than it is up front.
@@ -57,13 +78,22 @@ Ask these in the same upfront message and include the recommended default. If th
    - If enabled: see Step 3 for the full list of files to scaffold.
 8. **Result Pattern** — **do not ask; always enabled.** Domain operations return `Result<T>` for expected business failures instead of throwing. This applies to Anemic and CRUD services too — "record not found", "email already taken", and "insufficient stock" are expected outcomes, and exceptions are for the unexpected. Scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
    - Infrastructure faults (DB unreachable, serialization errors) still throw — `Result` is for business outcomes only.
+   - **Who returns it depends on the domain model.** Rich: aggregate methods and Domain Services (`order.Cancel()` → `Result`). Anemic: the entities are POCOs with no methods, so the **command/query handlers** return it, plus any Domain Service that exists. `Result<T>` still lives in `Domain/Common/` under both — it is a domain vocabulary type, not a persistence or transport concern, and the endpoint layer translates it (typically to RFC 7807 Problem Details).
    - Listed in the confirmation summary (Step 1.5) so the user can opt out there.
 9. **Event-Driven Design (EDD / Integration Events)** — ask whether the system needs event-driven communication between services or bounded contexts. Calibrate the recommendation based on the project nature described in item 0:
    - ✅ **Recommend enabling when**: microservices architecture; integration with external platforms (payment gateways, notification services, logistics); async workflows where services must react to each other's state changes; high-decoupling requirements between bounded contexts.
    - ❌ **Recommend skipping when**: simple monolith or internal tool with no inter-service communication; all business flows are synchronous and self-contained; team lacks message broker operational experience and the project doesn't justify the overhead.
    - Compatible with **both** Rich and Anemic Domain Models — Integration Events are an Application/Infrastructure concern, not a domain modelling concern.
    - If enabled: scaffold only the minimal event contracts needed by the confirmed use case, such as `Application/IntegrationEvents/` and `Application/Interfaces/IEventBus.cs`, plus a broker-specific implementation in `Infrastructure/`. Ask which message broker to target (RabbitMQ, Azure Service Bus, Kafka, etc.).
-10. **Endpoint framework** — **do not ask; always Minimal API route groups.** The reference scaffold and rules are built around them. Add **FastEndpoints** only if the user raises it themselves; never offer it as a choice.
+10. **Endpoint framework** — ordered preference, not a fixed default. Recommend the highest-ranked option that fits and state why:
+
+   | Rank | Option | When |
+   |------|--------|------|
+   | 1 | **Minimal API route groups** *(default)* | Normal case — endpoint count is manageable |
+   | 2 | **FastEndpoints** | Many endpoints whose rules differ materially (one resource routed through different approval flows by type), where framework-enforced one-endpoint-one-class isolation is worth the dependency |
+   | 3 | **MVC Controller** | Only to match an existing solution, or a real MVC dependency (View rendering) |
+
+   Never propose Controllers yourself — accept them only to match an existing codebase. Whichever is chosen, the conventions in `references/dotnet-scaffold.md` → Endpoint Pattern apply; it covers Minimal API and FastEndpoints.
 11. **Object mapper** — **do not ask; always Mapperly** (`--mapper mapperly`). Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time. Switch to **Mapster** or none only if the user asks; it is offered in the Step 1.5 summary.
    - 🚫 **AutoMapper is strictly forbidden** regardless of user preference.
 12. **OpenTelemetry** — **do not ask whether to install it; instrumentation is always scaffolded** (`OpenTelemetry.Extensions.Hosting`, `.Instrumentation.AspNetCore`, `.Instrumentation.Http`). With no exporter configured nothing is emitted and development is unaffected, so the cost of having it is near zero while the cost of retrofitting it is a `Program.cs` rewrite.
@@ -85,7 +115,7 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 | Project name       | Acme.OrderService        | you       |
 | DB provider        | SQL Server               | you       |
 | DB timezone        | Asia/Taipei              | you       |
-| DB topology        | Single connection        | default   |
+| DB topology        | Write/Read strings, one DbContext | default |
 | Domain model       | Anemic (Clean Arch + CQRS) | default |
 | Domain Events      | Enabled                  | you       |
 | Result Pattern     | Enabled                  | default   |
@@ -113,7 +143,7 @@ When the user explicitly authorizes defaults, use:
 - No Domain Services scaffolded up front under Anemic — added only when shared domain logic appears, named by capability.
 - Result Pattern always enabled (not a defaults-only choice — see item 8).
 - EDD skipped unless there is cross-service or asynchronous integration.
-- Single database connection unless the user confirms read replicas. CommandHandlers use `IXxxRepository` (Domain, aggregates); QueryHandlers use `IXxxReadRepository` (Application, DTOs); neither ever injects a `DbContext`. If read replicas are enabled, the binding routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
+- `ConnectionStrings:Write` + `ConnectionStrings:Read` with a single `DbContext` bound to `Write` (item 4) — not a user choice; two `DbContext`s only when a replica actually exists. CommandHandlers use `IXxxRepository` (aggregates/entities); QueryHandlers use `IXxxReadRepository` (DTOs); neither ever injects a `DbContext`. The routing rules that become binding once a replica exists (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
 - Minimal API route groups.
 - Mapperly.
 - OpenTelemetry instrumentation always installed; exporter left as none unless the user names an observability backend.
@@ -224,6 +254,7 @@ Before declaring the scaffold complete, verify:
 - [ ] Project builds / runs without errors
 - [ ] Layer separation is correct — `Domain` project has **zero** `<PackageReference>` entries
 - [ ] `Application/Cqrs/CQRS.cs` (namespace `<ProjectName>.Application.Cqrs`) contains only CQRS interfaces, dispatchers, and DI registration from `dotnet-cqrs-template.cs`; business commands/queries/handlers live in Application's `Commands/`/`Queries/`/`EventHandlers/`, not in this file
+- [ ] Each command/query shares a file with its own handler, named after the message (`ApproveSupplierCommand.cs`); no file holds two unrelated commands, and no module-wide `XxxDtos.cs` bundles unrelated DTOs
 - [ ] DDD directory structure in place — Rich model: `Events/`, `DomainServices/`, `ValueObjects/`, `Entities/` (with AggregateRoot base) in Domain, `EventHandlers/` in Application; Anemic model: `Entities/` (plain POCOs) in Domain, `Events/` and `ValueObjects/` folders omitted
 - [ ] Domain model style consistently applied (Rich: private setters + factory methods; Anemic: public setters only)
 - [ ] If Domain Events enabled: Rich model dispatches collected aggregate events after `IUnitOfWork.CommitAsync()` commits successfully; Anemic model dispatches explicit events only after the use case commit succeeds
@@ -231,10 +262,13 @@ Before declaring the scaffold complete, verify:
 - [ ] If Result Pattern enabled: `Result<T>` in `Domain/Common/`; domain methods return `Result` instead of throwing for business violations
 - [ ] If Event-Driven Design enabled: `Application/IntegrationEvents/` scaffolded, `IEventBus` defined in `Application/Interfaces/`, stub implementation in `Infrastructure/`
 - [ ] Exactly one DB provider package is added in `WebApi`, matching the user-selected database
-- [ ] Exactly one database topology is scaffolded — either `ConnectionStrings:Default` alone, or `Write` + `Read`; never both shapes in the same codebase
-- [ ] No generic `IRepository<T>` exists anywhere; each aggregate has its own named `IXxxRepository` in `Domain/Interfaces/` declaring only the operations its callers use, with no shared base interface
-- [ ] Write/read repository split is present regardless of topology: `IXxxRepository` in `Domain/Interfaces/` returning aggregates, `IXxxReadRepository` in `Application/Interfaces/` returning DTOs, both implemented in `Persistence`; no handler injects a `DbContext`, no CommandHandler injects a read repository, no QueryHandler injects a write repository
+- [ ] `appsettings` declares `ConnectionStrings:Write` **and** `ConnectionStrings:Read` (no `Default` key anywhere); without a replica both hold the same value and only `Write` is bound in DI, with exactly one `DbContext` registered
+- [ ] No generic `IRepository<T>` exists anywhere; each aggregate has its own named `IXxxRepository` declaring only the operations its callers use, with no shared base interface
+- [ ] Repository interfaces sit in the project the chosen domain model dictates — **Anemic**: `IXxxRepository`, `IXxxReadRepository`, `IUnitOfWork` and the domain-event interfaces all in `Application`, with `Domain` holding **no** persistence interfaces at all; **Rich**: `IXxxRepository`/`IUnitOfWork`/domain-event interfaces in `Domain/Interfaces/`, `IXxxReadRepository` in `Application/Interfaces/`. The layout in force is recorded in the README
+- [ ] Write/read repository split is present regardless of topology: write side returns entities/aggregates, read side returns DTOs, both implemented in `Persistence`; no handler injects a `DbContext`, no CommandHandler injects a read repository, no QueryHandler injects a write repository
 - [ ] If read replicas are enabled: `WriteDbContext` and `ReadDbContext` both derive from a shared abstract `AppDbContext` (model configured once) and bind to `ConnectionStrings:Write` / `ConnectionStrings:Read`; write repositories and `IUnitOfWork` take `WriteDbContext`, read repositories take `ReadDbContext`; a strong-consistency query is served by a second read-repository implementation on the write context resolved via a keyed service, never by injecting a `DbContext` into the handler, and the case is named in a comment; migrations and the design-time factory bind to `Write`; health checks probe both connections
+- [ ] `Program.cs` ends with `public partial class Program;` so `WebApplicationFactory<Program>` compiles
+- [ ] Integration-test config is injected with `UseSetting`, not `ConfigureAppConfiguration` (the app's own `appsettings.{Env}.json` overrides the latter and its secret fields are empty by policy); scopes resolving `IUnitOfWork` use `CreateAsyncScope()`
 - [ ] `Directory.Packages.props` contains verified latest stable versions, no `LATEST_STABLE` placeholders, no preview/beta/RC packages
 - [ ] Serilog bootstrap logger in `Program.cs`; `UseSerilogRequestLogging` registered; enrichers installed
 - [ ] `appsettings.json` has full Serilog config (sinks, enrichers, level overrides); no hard-coded sink setup in `Program.cs`
@@ -271,4 +305,5 @@ These hold regardless of what the user asks:
 - **Object mapping**: **AutoMapper forbidden** — Mapperly / Mapster / manual only (chosen in Step 1). *(rules.md → Object Mapping)*
 - **Caching**: none by default; prefer **HybridCache** if needed. *(rules.md → Caching)*
 - **Asking questions**: always pair a technology choice with a clear recommendation — never ask blind.
+- **Conflicts with existing project docs are the user's call**: when local documentation and this skill disagree, surface every conflict and let the user decide. Never silently follow either side, and never treat a documented architectural decision as a defect to be corrected. *(Step 0)*
 - **Mandatory build verification**: the session is not complete until `dotnet build` (0 errors) and `dotnet test` (all green) both pass. Never skip.
