@@ -23,10 +23,21 @@
 #   scaffold.sh --name <ProjectName> --db <sqlserver|postgres> \
 #               [--mapper <mapperly|mapster|none>] \
 #               [--otel <none|otlp|console|azure>]   # exporter only; instrumentation is always installed \
-#               [--read-replicas] [--dir <parent-dir>]
+#               [--api-suffix <Api|WebApi|...>]      # entry-point project suffix (default: Api) \
+#               [--read-replicas] [--into-existing] [--dir <parent-dir>]
 #
 # Example:
 #   scaffold.sh --name Acme.OrderService --db sqlserver --mapper mapperly --otel otlp
+#
+# --api-suffix: the entry-point project is named "<Name>.<suffix>". Default "Api" —
+#   "Web" adds no information (this layer IS the HTTP entry point; gRPC/GraphQL
+#   endpoints live in the same project) and "WebApi" only echoes the retired
+#   ASP.NET Web API product name. Pass --api-suffix WebApi to match an existing
+#   solution's convention.
+#
+# --into-existing: scaffold into a directory that already exists. Intended for the
+#   common case of a repo that already holds README/docs but no code yet. Still
+#   refuses when a solution is already present (src/ or *.slnx).
 # ============================================================================
 set -euo pipefail
 
@@ -35,7 +46,9 @@ NAME=""
 DB=""
 MAPPER="mapperly"
 OTEL="none"
+API_SUFFIX="Api"
 READ_REPLICAS="false"
+INTO_EXISTING="false"
 PARENT_DIR="."
 
 usage() { grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
@@ -46,7 +59,9 @@ while [[ $# -gt 0 ]]; do
     --db)            DB="$2"; shift 2 ;;
     --mapper)        MAPPER="$2"; shift 2 ;;
     --otel)          OTEL="$2"; shift 2 ;;
+    --api-suffix)    API_SUFFIX="$2"; shift 2 ;;
     --read-replicas) READ_REPLICAS="true"; shift ;;
+    --into-existing) INTO_EXISTING="true"; shift ;;
     --dir)           PARENT_DIR="$2"; shift 2 ;;
     -h|--help)       usage 0 ;;
     *) echo "Unknown arg: $1" >&2; usage 1 ;;
@@ -58,15 +73,27 @@ done
 case "$DB" in sqlserver|postgres) ;; *) echo "ERROR: --db must be sqlserver|postgres (got '$DB')" >&2; exit 1 ;; esac
 case "$MAPPER" in mapperly|mapster|none) ;; *) echo "ERROR: --mapper must be mapperly|mapster|none" >&2; exit 1 ;; esac
 case "$OTEL" in none|otlp|console|azure) ;; *) echo "ERROR: --otel must be none|otlp|console|azure" >&2; exit 1 ;; esac
+[[ "$API_SUFFIX" =~ ^[A-Za-z][A-Za-z0-9]*$ ]] || { echo "ERROR: --api-suffix must be alphanumeric (got '$API_SUFFIX')" >&2; exit 1; }
 command -v dotnet >/dev/null || { echo "ERROR: dotnet CLI not found" >&2; exit 1; }
 
 ROOT="$PARENT_DIR/$NAME"
-[[ ! -e "$ROOT" ]] || { echo "ERROR: target '$ROOT' already exists — refusing to overwrite" >&2; exit 1; }
+if [[ -e "$ROOT" ]]; then
+  # A directory holding only README/docs is a normal starting point; a directory
+  # that already holds a solution is not — never scaffold over existing code.
+  if [[ "$INTO_EXISTING" != "true" ]]; then
+    echo "ERROR: target '$ROOT' already exists — pass --into-existing to scaffold into it" >&2; exit 1
+  fi
+  if [[ -d "$ROOT/src" ]] || compgen -G "$ROOT/*.slnx" >/dev/null || compgen -G "$ROOT/*.sln" >/dev/null; then
+    echo "ERROR: '$ROOT' already contains a solution (src/ or *.sln[x]) — refusing to overwrite" >&2; exit 1
+  fi
+fi
 
 S="src/$NAME"        # source path prefix
 T="tests/$NAME"      # tests path prefix
+W="$S.$API_SUFFIX"                    # entry-point project dir
+WCS="$W/$NAME.$API_SUFFIX.csproj"     # entry-point csproj
 
-echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL, read-replicas=$READ_REPLICAS)"
+echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL, api-suffix=$API_SUFFIX, read-replicas=$READ_REPLICAS)"
 mkdir -p "$ROOT"; cd "$ROOT"
 
 # ---------------------------------------------------------------------------
@@ -111,7 +138,7 @@ dotnet new classlib -n "$NAME.Domain"         -o "$S.Domain"
 dotnet new classlib -n "$NAME.Application"    -o "$S.Application"
 dotnet new classlib -n "$NAME.Infrastructure" -o "$S.Infrastructure"
 dotnet new classlib -n "$NAME.Persistence"    -o "$S.Persistence"
-dotnet new webapi   -n "$NAME.WebApi"         -o "$S.WebApi"
+dotnet new webapi   -n "$NAME.$API_SUFFIX" -o "$W"
 dotnet new xunit    -n "$NAME.UnitTests"        -o "$T.UnitTests"
 dotnet new xunit    -n "$NAME.IntegrationTests" -o "$T.IntegrationTests"
 
@@ -155,12 +182,12 @@ dotnet add "$S.Application/$NAME.Application.csproj"       reference "$S.Domain/
 dotnet add "$S.Infrastructure/$NAME.Infrastructure.csproj" reference "$S.Application/$NAME.Application.csproj"
 dotnet add "$S.Persistence/$NAME.Persistence.csproj"       reference "$S.Application/$NAME.Application.csproj"
 dotnet add "$S.Persistence/$NAME.Persistence.csproj"       reference "$S.Domain/$NAME.Domain.csproj"
-dotnet add "$S.WebApi/$NAME.WebApi.csproj"                 reference "$S.Application/$NAME.Application.csproj"
-dotnet add "$S.WebApi/$NAME.WebApi.csproj"                 reference "$S.Infrastructure/$NAME.Infrastructure.csproj"
-dotnet add "$S.WebApi/$NAME.WebApi.csproj"                 reference "$S.Persistence/$NAME.Persistence.csproj"
+dotnet add "$WCS"                 reference "$S.Application/$NAME.Application.csproj"
+dotnet add "$WCS"                 reference "$S.Infrastructure/$NAME.Infrastructure.csproj"
+dotnet add "$WCS"                 reference "$S.Persistence/$NAME.Persistence.csproj"
 dotnet add "$T.UnitTests/$NAME.UnitTests.csproj"          reference "$S.Domain/$NAME.Domain.csproj"
 dotnet add "$T.UnitTests/$NAME.UnitTests.csproj"          reference "$S.Application/$NAME.Application.csproj"
-dotnet add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" reference "$S.WebApi/$NAME.WebApi.csproj"
+dotnet add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" reference "$WCS"
 
 # ---------------------------------------------------------------------------
 # 5. Packages (versions auto-resolved to latest stable into Directory.Packages.props)
@@ -170,28 +197,28 @@ add() { local proj="$1"; local pkg="$2"; shift 2; dotnet add "$proj" package "$p
 # CQRS core lives in Application (single Cqrs/CQRS.cs); needs DI abstractions for AddCqrs assembly scanning
 add "$S.Application/$NAME.Application.csproj" Microsoft.Extensions.DependencyInjection.Abstractions
 
-# Persistence: EF Core (+ Relational for entity config APIs) + Dapper; WebApi: EF Core Design (for dotnet-ef)
+# Persistence: EF Core (+ Relational for entity config APIs) + Dapper; entry-point project: EF Core Design (for dotnet-ef)
 add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.EntityFrameworkCore
 # Relational is REQUIRED in Persistence: ToTable/HasColumnName/HasDefaultValueSql/HasMaxLength
 # and migrations all live in EntityFrameworkCore.Relational, not the base package.
 add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.EntityFrameworkCore.Relational
 add "$S.Persistence/$NAME.Persistence.csproj" Dapper
-add "$S.WebApi/$NAME.WebApi.csproj"           Microsoft.EntityFrameworkCore.Design
+add "$WCS"           Microsoft.EntityFrameworkCore.Design
 
-# Validation (Application defines validators; WebApi registers them)
+# Validation (Application defines validators; the entry-point project registers them)
 add "$S.Application/$NAME.Application.csproj" FluentValidation
-add "$S.WebApi/$NAME.WebApi.csproj"          FluentValidation.DependencyInjectionExtensions
+add "$WCS"          FluentValidation.DependencyInjectionExtensions
 
-# Serilog (WebApi)
+# Serilog (entry-point project)
 for p in Serilog.AspNetCore Serilog.Settings.Configuration Serilog.Sinks.Console \
          Serilog.Sinks.File Serilog.Enrichers.Environment Serilog.Enrichers.Process \
          Serilog.Enrichers.Thread; do
-  add "$S.WebApi/$NAME.WebApi.csproj" "$p"
+  add "$WCS" "$p"
 done
 
 # API docs: Microsoft OpenAPI + Scalar
-add "$S.WebApi/$NAME.WebApi.csproj" Microsoft.AspNetCore.OpenApi
-add "$S.WebApi/$NAME.WebApi.csproj" Scalar.AspNetCore
+add "$WCS" Microsoft.AspNetCore.OpenApi
+add "$WCS" Scalar.AspNetCore
 
 # --- Transitive security pin: Microsoft.OpenApi ---
 # Microsoft.AspNetCore.OpenApi 10.x transitively pulls Microsoft.OpenApi 2.0.0,
@@ -203,7 +230,7 @@ OPENAPI_2X="$(curl -s https://api.nuget.org/v3-flatcontainer/microsoft.openapi/i
   | tr ',' '\n' | grep -oE '2\.[0-9]+\.[0-9]+' | sort -uV | tail -1 || true)"
 if [[ -n "$OPENAPI_2X" ]]; then
   echo ">>> Pinning transitive Microsoft.OpenApi to latest patched 2.x ($OPENAPI_2X) to clear NU1903"
-  add "$S.WebApi/$NAME.WebApi.csproj" Microsoft.OpenApi --version "$OPENAPI_2X"
+  add "$WCS" Microsoft.OpenApi --version "$OPENAPI_2X"
 else
   echo "!!! WARNING: could not resolve latest Microsoft.OpenApi 2.x. If restore fails with NU1903," >&2
   echo "!!! manually add a patched Microsoft.OpenApi 2.x PackageVersion to Directory.Packages.props." >&2
@@ -225,7 +252,7 @@ add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" FluentAssertions --versi
 add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" NSubstitute
 add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" Microsoft.AspNetCore.Mvc.Testing
 
-# DB provider. WebApi owns DI registration, BUT the provider is ALSO needed in
+# DB provider. The entry-point project owns DI registration, BUT the provider is ALSO needed in
 # Persistence: `dotnet ef migrations` emits provider-specific annotations into the
 # Persistence project, so without it migrations fail with CS0246 (provider not found).
 DB_PKG=""
@@ -233,7 +260,7 @@ case "$DB" in
   sqlserver) DB_PKG="Microsoft.EntityFrameworkCore.SqlServer" ;;
   postgres)  DB_PKG="Npgsql.EntityFrameworkCore.PostgreSQL" ;;
 esac
-add "$S.WebApi/$NAME.WebApi.csproj"           "$DB_PKG"
+add "$WCS"           "$DB_PKG"
 add "$S.Persistence/$NAME.Persistence.csproj" "$DB_PKG"
 
 # Object mapper
@@ -254,18 +281,18 @@ case "$MAPPER" in
   none) ;;
 esac
 
-# OpenTelemetry (WebApi) — instrumentation is always installed; --otel picks the
+# OpenTelemetry (entry-point project) — instrumentation is always installed; --otel picks the
 # exporter only. Without an exporter nothing is emitted and there is no runtime
 # cost, but turning observability on later is a config change rather than a
 # Program.cs rewrite. A project that genuinely wants none can delete these three
 # packages and the AddOpenTelemetry() block — cheaper than wiring them back in.
-add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Extensions.Hosting
-add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.AspNetCore
-add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Instrumentation.Http
+add "$WCS" OpenTelemetry.Extensions.Hosting
+add "$WCS" OpenTelemetry.Instrumentation.AspNetCore
+add "$WCS" OpenTelemetry.Instrumentation.Http
 case "$OTEL" in
-  otlp)    add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.OpenTelemetryProtocol ;;
-  console) add "$S.WebApi/$NAME.WebApi.csproj" OpenTelemetry.Exporter.Console ;;
-  azure)   add "$S.WebApi/$NAME.WebApi.csproj" Azure.Monitor.OpenTelemetry.AspNetCore ;;
+  otlp)    add "$WCS" OpenTelemetry.Exporter.OpenTelemetryProtocol ;;
+  console) add "$WCS" OpenTelemetry.Exporter.Console ;;
+  azure)   add "$WCS" Azure.Monitor.OpenTelemetry.AspNetCore ;;
   none)    : ;;  # instrumentation only, no exporter
 esac
 
@@ -317,7 +344,7 @@ cat <<EOF
 >>> Directory.Packages.props now holds resolved latest-stable versions.
 
 NEXT (done by the skill, not this script — they are context-dependent):
-  - Overwrite $S.WebApi/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenAPI+Scalar, etc.)
+  - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenAPI+Scalar, etc.)
   - Copy CQRS core from dotnet-cqrs-template.cs into $S.Application/Cqrs/CQRS.cs (namespace $NAME.Application.Cqrs; replace YourProject -> $NAME)
   - Scaffold domain building blocks from dotnet-domain-template.cs per chosen model style
   - Write appsettings.json / appsettings.Development.json (read-replicas=$READ_REPLICAS)
@@ -325,5 +352,7 @@ NEXT (done by the skill, not this script — they are context-dependent):
   - Write meaningful tests, then: dotnet build && dotnet test
 EOF
 if [[ "$READ_REPLICAS" == "true" ]]; then
-  echo ">>> READ REPLICAS: use ConnectionStrings:Write + ConnectionStrings:Read (no ConnectionStrings:Default) and separate Write/Read DbContext registrations. Routing rules: see docs/agents/dotnet-rules.md -> CQRS Implementation."
+  echo ">>> READ REPLICAS: bind separate Write/Read DbContext registrations to ConnectionStrings:Write and :Read. Routing rules: see docs/agents/dotnet-rules.md -> CQRS Implementation."
+else
+  echo ">>> DB CONFIG: appsettings declares BOTH ConnectionStrings:Write and :Read (same value; there is no Default key). Bind ONE DbContext to Write. Read is reserved and unused until a replica exists — do NOT register a second DbContext for it."
 fi
