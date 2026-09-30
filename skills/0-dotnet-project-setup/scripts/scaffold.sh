@@ -8,7 +8,7 @@
 #   - CPM files created FIRST so every `dotnet add package` respects CPM
 #   - package installation (versions auto-resolved to latest stable by `dotnet`)
 #   - Mapperly PrivateAssets csproj edit (no CLI flag exists for this)
-#   - conditional DB provider / OpenTelemetry / read-replica notes
+#   - conditional DB provider / OpenTelemetry notes
 #
 # It does NOT write template file CONTENT (Program.cs, domain building blocks,
 # appsettings, AGENTS.md, tests). Those are context-dependent (Rich vs Anemic,
@@ -23,17 +23,12 @@
 #   scaffold.sh --name <ProjectName> --db <sqlserver|postgres> \
 #               [--mapper <mapperly|mapster|none>] \
 #               [--otel <none|otlp|console|azure>]   # exporter only; instrumentation is always installed \
-#               [--api-suffix <Api|WebApi|...>]      # entry-point project suffix (default: Api) \
-#               [--read-replicas] [--into-existing] [--dir <parent-dir>]
+#               [--into-existing] [--dir <parent-dir>]
 #
 # Example:
 #   scaffold.sh --name Acme.OrderService --db sqlserver --mapper mapperly --otel otlp
 #
-# --api-suffix: the entry-point project is named "<Name>.<suffix>". Default "Api" —
-#   "Web" adds no information (this layer IS the HTTP entry point; gRPC/GraphQL
-#   endpoints live in the same project) and "WebApi" only echoes the retired
-#   ASP.NET Web API product name. Pass --api-suffix WebApi to match an existing
-#   solution's convention.
+# The entry-point project is always named "<Name>.Api" (this layer IS the HTTP entry point).
 #
 # --into-existing: scaffold into a directory that already exists. Intended for the
 #   common case of a repo that already holds README/docs but no code yet. Still
@@ -46,8 +41,6 @@ NAME=""
 DB=""
 MAPPER="mapperly"
 OTEL="none"
-API_SUFFIX="Api"
-READ_REPLICAS="false"
 INTO_EXISTING="false"
 PARENT_DIR="."
 
@@ -59,8 +52,6 @@ while [[ $# -gt 0 ]]; do
     --db)            DB="$2"; shift 2 ;;
     --mapper)        MAPPER="$2"; shift 2 ;;
     --otel)          OTEL="$2"; shift 2 ;;
-    --api-suffix)    API_SUFFIX="$2"; shift 2 ;;
-    --read-replicas) READ_REPLICAS="true"; shift ;;
     --into-existing) INTO_EXISTING="true"; shift ;;
     --dir)           PARENT_DIR="$2"; shift 2 ;;
     -h|--help)       usage 0 ;;
@@ -73,7 +64,6 @@ done
 case "$DB" in sqlserver|postgres) ;; *) echo "ERROR: --db must be sqlserver|postgres (got '$DB')" >&2; exit 1 ;; esac
 case "$MAPPER" in mapperly|mapster|none) ;; *) echo "ERROR: --mapper must be mapperly|mapster|none" >&2; exit 1 ;; esac
 case "$OTEL" in none|otlp|console|azure) ;; *) echo "ERROR: --otel must be none|otlp|console|azure" >&2; exit 1 ;; esac
-[[ "$API_SUFFIX" =~ ^[A-Za-z][A-Za-z0-9]*$ ]] || { echo "ERROR: --api-suffix must be alphanumeric (got '$API_SUFFIX')" >&2; exit 1; }
 command -v dotnet >/dev/null || { echo "ERROR: dotnet CLI not found" >&2; exit 1; }
 
 ROOT="$PARENT_DIR/$NAME"
@@ -90,10 +80,10 @@ fi
 
 S="src/$NAME"        # source path prefix
 T="tests/$NAME"      # tests path prefix
-W="$S.$API_SUFFIX"                    # entry-point project dir
-WCS="$W/$NAME.$API_SUFFIX.csproj"     # entry-point csproj
+W="$S.Api"                    # entry-point project dir
+WCS="$W/$NAME.Api.csproj"     # entry-point csproj
 
-echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL, api-suffix=$API_SUFFIX, read-replicas=$READ_REPLICAS)"
+echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL)"
 mkdir -p "$ROOT"; cd "$ROOT"
 
 # ---------------------------------------------------------------------------
@@ -138,7 +128,7 @@ dotnet new classlib -n "$NAME.Domain"         -o "$S.Domain"
 dotnet new classlib -n "$NAME.Application"    -o "$S.Application"
 dotnet new classlib -n "$NAME.Infrastructure" -o "$S.Infrastructure"
 dotnet new classlib -n "$NAME.Persistence"    -o "$S.Persistence"
-dotnet new webapi   -n "$NAME.$API_SUFFIX" -o "$W"
+dotnet new webapi   -n "$NAME.Api" -o "$W"
 dotnet new xunit    -n "$NAME.UnitTests"        -o "$T.UnitTests"
 dotnet new xunit    -n "$NAME.IntegrationTests" -o "$T.IntegrationTests"
 
@@ -203,6 +193,9 @@ add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.EntityFrameworkCore
 # and migrations all live in EntityFrameworkCore.Relational, not the base package.
 add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.EntityFrameworkCore.Relational
 add "$S.Persistence/$NAME.Persistence.csproj" Dapper
+# Design-time factory (WriteDbContextFactory) builds IConfiguration from appsettings.json + env vars.
+add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.Extensions.Configuration.Json
+add "$S.Persistence/$NAME.Persistence.csproj" Microsoft.Extensions.Configuration.EnvironmentVariables
 add "$WCS"           Microsoft.EntityFrameworkCore.Design
 
 # Validation (Application defines validators; the entry-point project registers them)
@@ -240,15 +233,7 @@ fi
 add "$S.Infrastructure/$NAME.Infrastructure.csproj" Microsoft.Extensions.Http.Resilience
 
 # Tests
-# FluentAssertions 8.x switched to a PAID commercial (Xceed) licence — forbidden by the
-# MIT/Apache-only policy. Pin to the latest 7.x (Apache-2.0). Resolve it dynamically.
-FA7="$(curl -s https://api.nuget.org/v3-flatcontainer/fluentassertions/index.json 2>/dev/null \
-  | tr ',' '\n' | grep -oE '7\.[0-9]+\.[0-9]+' | sort -uV | tail -1)"
-FA7="${FA7:-7.2.2}"   # fallback to a known Apache-2.0 release if offline
-echo ">>> Pinning FluentAssertions to $FA7 (Apache-2.0; 8.x is a paid licence)"
-add "$T.UnitTests/$NAME.UnitTests.csproj" FluentAssertions --version "$FA7"
 add "$T.UnitTests/$NAME.UnitTests.csproj" NSubstitute
-add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" FluentAssertions --version "$FA7"
 add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" NSubstitute
 add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" Microsoft.AspNetCore.Mvc.Testing
 
@@ -347,12 +332,8 @@ NEXT (done by the skill, not this script — they are context-dependent):
   - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenAPI+Scalar, etc.)
   - Copy CQRS core from dotnet-cqrs-template.cs into $S.Application/Cqrs/CQRS.cs (namespace $NAME.Application.Cqrs; replace YourProject -> $NAME)
   - Scaffold domain building blocks from dotnet-domain-template.cs per chosen model style
-  - Write appsettings.json / appsettings.Development.json (read-replicas=$READ_REPLICAS)
+  - Write appsettings.json / appsettings.Development.json (ConnectionStrings:Write + :Read, same value without a replica)
   - Create AGENTS.md (root, short) + docs/agents/dotnet-rules.md (full rules)
   - Write meaningful tests, then: dotnet build && dotnet test
 EOF
-if [[ "$READ_REPLICAS" == "true" ]]; then
-  echo ">>> READ REPLICAS: bind separate Write/Read DbContext registrations to ConnectionStrings:Write and :Read. Routing rules: see docs/agents/dotnet-rules.md -> CQRS Implementation."
-else
-  echo ">>> DB CONFIG: appsettings declares BOTH ConnectionStrings:Write and :Read (same value; there is no Default key). Bind ONE DbContext to Write. Read is reserved and unused until a replica exists — do NOT register a second DbContext for it."
-fi
+echo ">>> DB CONFIG (fixed): CQRS + read/write split is mandatory. Register WriteDbContext (ConnectionStrings:Write) AND ReadDbContext (ConnectionStrings:Read), both deriving from abstract AppDbContext; both connection strings hold the same value when no replica exists. Never register a single AppDbContext. Routing rules: see docs/agents/dotnet-rules.md -> CQRS Implementation."
