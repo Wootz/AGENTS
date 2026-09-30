@@ -24,7 +24,7 @@ Key principles:
 
 - **Domain** is the innermost layer: entities, aggregates, value objects, domain services, domain events. Under the Rich model it also defines the per-aggregate `IXxxRepository` interfaces and `IUnitOfWork`; under Anemic those live in `Application` (see dotnet-rules.md -> *Where repository interfaces live*). Zero framework references either way.
 - **Application** orchestrates domain objects via command/query handlers. It owns `IXxxReadRepository` always, and — under the Anemic model — `IXxxRepository`, `IUnitOfWork`, and the domain-event interfaces as well. No direct DB or HTTP calls.
-- **Persistence** implements the per-aggregate `IXxxRepository` interfaces, `IUnitOfWork`, and `IXxxReadRepository`, wherever each is declared. Owns EF Core DbContext, Dapper/raw SQL access, migrations, repositories, Unit of Work. Do not create Persistence-local interfaces for internal plumbing.
+- **Persistence** implements the per-aggregate `IXxxRepository` interfaces, `IUnitOfWork`, and `IXxxReadRepository`, wherever each is declared. Owns the two EF Core contexts (`WriteDbContext`, `ReadDbContext`), Dapper/raw SQL access, migrations, repositories, Unit of Work. Do not create Persistence-local interfaces for internal plumbing.
 - **Infrastructure** owns external service integrations (email, storage, queues, HTTP clients). It implements Domain-defined interfaces when the capability is required by Domain Services, and Application-defined interfaces only for application-only orchestration concerns.
 - **Api** is the entry point: endpoints, middleware, DI wiring. Delegates all business decisions to Application through CQRS dispatchers.
 
@@ -51,7 +51,8 @@ Key principles:
 │   │   ├── Enums/
 │   │   ├── Events/                             # Domain events
 │   │   ├── DomainServices/                     # Shared domain logic, capability-named (e.g. PricingService)
-│   │   ├── Interfaces/                         # IXxxRepository (one per aggregate), IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>
+│   │   ├── Interfaces/                         # Rich only: IXxxRepository (one per aggregate), IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>
+│   │   │                                       # (Anemic: none — Domain holds no persistence interfaces; capability interfaces only if needed)
 │   │   └── <ProjectName>.Domain.csproj
 │   ├── <ProjectName>.Application/              # Use cases — commands, queries, handlers, validators, mappers
 │   │   ├── Cqrs/
@@ -60,17 +61,21 @@ Key principles:
 │   │   ├── Queries/
 │   │   ├── EventHandlers/                      # Domain event handlers
 │   │   ├── IntegrationEvents/                  # Optional: cross-service integration events (if EDD enabled)
-│   │   ├── Interfaces/                         # Optional: IEventBus or application-only ports
+│   │   ├── Interfaces/                         # IXxxReadRepository (always); Anemic also: IXxxRepository, IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>; optional IEventBus / application-only ports
 │   │   ├── Validators/                         # FluentValidation validators
 │   │   ├── Mappers/                            # Mapperly / Mapster mapper classes (if used)
 │   │   └── <ProjectName>.Application.csproj
 │   ├── <ProjectName>.Infrastructure/           # External integrations (email, storage, queues)
 │   │   ├── Services/
 │   │   └── <ProjectName>.Infrastructure.csproj
-│   ├── <ProjectName>.Persistence/             # EF Core DbContext, Repositories, Unit of Work
+│   ├── <ProjectName>.Persistence/             # EF Core contexts, Repositories, Unit of Work
+│   │   ├── AppDbContext.cs                     # Abstract base — shared model, never registered in DI
+│   │   ├── WriteDbContext.cs                   # ConnectionStrings:Write — repositories + IUnitOfWork
+│   │   ├── ReadDbContext.cs                    # ConnectionStrings:Read — read repositories; NoTracking, SaveChanges throws
+│   │   ├── WriteDbContextFactory.cs            # Design-time factory — Write only
 │   │   ├── Configurations/
 │   │   ├── Migrations/
-│   │   ├── Repositories/                       # Write side — implements Domain's IXxxRepository interfaces
+│   │   ├── Repositories/                       # Write side — implements IXxxRepository (Domain under Rich, Application under Anemic)
 │   │   ├── ReadRepositories/                   # Read side — implements Application's IXxxReadRepository
 │   │   ├── UnitOfWork/
 │   │   └── <ProjectName>.Persistence.csproj
@@ -88,7 +93,7 @@ Key principles:
         └── <ProjectName>.IntegrationTests.csproj
 ```
 
-> **Entry-point project name**: `<ProjectName>.Api` by default. `scaffold.sh --api-suffix WebApi` restores the older spelling for solutions that already use it. `Web` carries no information here — this layer *is* the HTTP entry point, and gRPC/GraphQL endpoints would live in the same project — while `WebApi` only echoes the retired ASP.NET Web API product name.
+> **Entry-point project name**: always `<ProjectName>.Api` — this layer *is* the HTTP entry point, and gRPC/GraphQL endpoints would live in the same project.
 
 > **DI registration files**: each layer that registers services owns one `DependencyInjection.cs` holding a `public static class DependencyInjection` with its `AddPersistence()` / `AddInfrastructure()` extension. Do not prefix the file or class with the layer name (`PersistenceDependencyInjection`) — the namespace already says which layer it is, and the call site reads the same either way.
 
@@ -121,7 +126,7 @@ src/
 │   │   │   └── Repositories/          # IXxxRepository / IXxxReadRepository (Anemic)
 │   │   └── {Module}/…
 │   └── Common/                        # IUnitOfWork, IDomainEventDispatcher,
-│                                      # IDomainEventHandler<T> (Anemic)
+│                                      # IDomainEventHandler<T> (Anemic; cross-module, so not under Modules/)
 ├── <ProjectName>.Persistence/         # NOT split by module
 │   ├── DependencyInjection.cs
 │   ├── Configurations/ Repositories/ ReadRepositories/ UnitOfWork/ Migrations/
@@ -132,15 +137,13 @@ src/
     └── Endpoints/{Module}/
 ```
 
-**The asymmetry is deliberate.** `Persistence` shares one `DbContext` and one migration history, and cross-module queries are normal — splitting it by module creates folders that cannot own their schema. `Infrastructure` groups by external resource (mail, storage, each integrated system), which does not map one-to-one onto business modules. Only `Domain`, `Application`, and the endpoint layer get `Modules/`.
+**The asymmetry is deliberate.** `Persistence` shares one model (the two contexts inherit it from `AppDbContext`) and one migration history, and cross-module queries are normal — splitting it by module creates folders that cannot own their schema. `Infrastructure` groups by external resource (mail, storage, each integrated system), which does not map one-to-one onto business modules. Only `Domain`, `Application`, and the endpoint layer get `Modules/`.
 
 ---
 
 ## Scaffold Commands
 
 > **Primary path: run `scripts/scaffold.sh`** (see SKILL.md Step 3). It executes everything below in the correct order, keeps CPM correct by construction, and auto-pins vulnerable transitive packages. The command list here is the reference for *what* the script installs and a manual fallback if the script is unavailable — you normally do not hand-run these.
->
-> **Project naming in this block:** the commands below spell the entry-point project `<ProjectName>.WebApi` throughout. The script's default is now `<ProjectName>.Api` (`--api-suffix` overrides it) — when hand-running these as a fallback, substitute the suffix you intend everywhere it appears.
 >
 > **Vulnerable-transitive note (NU1903):** `TreatWarningsAsErrors=true` turns a transitive security advisory into a build failure. One is known on .NET 10: `Microsoft.AspNetCore.OpenApi` pulls a vulnerable `Microsoft.OpenApi 2.0.0` — pin to the **latest 2.x** (its 3.x breaks the ASP.NET Core source generator, so *not* latest overall). The script pins it automatically and self-heals any *new* NU1903 it sees at restore time.
 
@@ -160,7 +163,7 @@ dotnet new classlib -n <ProjectName>.Domain         -o src/<ProjectName>.Domain
 dotnet new classlib -n <ProjectName>.Application    -o src/<ProjectName>.Application
 dotnet new classlib -n <ProjectName>.Infrastructure -o src/<ProjectName>.Infrastructure
 dotnet new classlib -n <ProjectName>.Persistence    -o src/<ProjectName>.Persistence
-dotnet new webapi   -n <ProjectName>.WebApi         -o src/<ProjectName>.WebApi
+dotnet new webapi   -n <ProjectName>.Api         -o src/<ProjectName>.Api
 
 # 3. Create test projects
 dotnet new xunit -n <ProjectName>.UnitTests        -o tests/<ProjectName>.UnitTests
@@ -193,47 +196,47 @@ dotnet add src/<ProjectName>.Application/    reference src/<ProjectName>.Domain/
 dotnet add src/<ProjectName>.Infrastructure/ reference src/<ProjectName>.Application/
 dotnet add src/<ProjectName>.Persistence/    reference src/<ProjectName>.Application/
 dotnet add src/<ProjectName>.Persistence/    reference src/<ProjectName>.Domain/
-dotnet add src/<ProjectName>.WebApi/         reference src/<ProjectName>.Application/
-dotnet add src/<ProjectName>.WebApi/         reference src/<ProjectName>.Infrastructure/
-dotnet add src/<ProjectName>.WebApi/         reference src/<ProjectName>.Persistence/
+dotnet add src/<ProjectName>.Api/         reference src/<ProjectName>.Application/
+dotnet add src/<ProjectName>.Api/         reference src/<ProjectName>.Infrastructure/
+dotnet add src/<ProjectName>.Api/         reference src/<ProjectName>.Persistence/
 dotnet add tests/<ProjectName>.UnitTests/         reference src/<ProjectName>.Domain/
 dotnet add tests/<ProjectName>.UnitTests/         reference src/<ProjectName>.Application/
-dotnet add tests/<ProjectName>.IntegrationTests/  reference src/<ProjectName>.WebApi/
+dotnet add tests/<ProjectName>.IntegrationTests/  reference src/<ProjectName>.Api/
 
 # 5a. Add DI Abstractions to Application (Cqrs/CQRS.cs needs IServiceCollection / IServiceProvider for AddCqrs)
 dotnet add src/<ProjectName>.Application/ package Microsoft.Extensions.DependencyInjection.Abstractions
 
-# 6. Add EF Core to Persistence project, and EF Core Design to WebApi (required for dotnet-ef CLI)
+# 6. Add EF Core to Persistence project, and EF Core Design to Api (required for dotnet-ef CLI)
 dotnet add src/<ProjectName>.Persistence/ package Microsoft.EntityFrameworkCore
 # Relational is REQUIRED in Persistence — ToTable/HasColumnName/HasDefaultValueSql/HasMaxLength
 # and migrations live here, NOT in the base EntityFrameworkCore package.
 dotnet add src/<ProjectName>.Persistence/ package Microsoft.EntityFrameworkCore.Relational
-dotnet add src/<ProjectName>.WebApi/      package Microsoft.EntityFrameworkCore.Design
+dotnet add src/<ProjectName>.Api/      package Microsoft.EntityFrameworkCore.Design
 
-# 7. Add Dapper to Persistence project
+# 7. Add Dapper to Persistence project, plus configuration providers for WriteDbContextFactory (design-time)
 dotnet add src/<ProjectName>.Persistence/ package Dapper
+dotnet add src/<ProjectName>.Persistence/ package Microsoft.Extensions.Configuration.Json
+dotnet add src/<ProjectName>.Persistence/ package Microsoft.Extensions.Configuration.EnvironmentVariables
 
 # 7b. Add FluentValidation to Application (validators) and the entry-point project (DI registration)
 dotnet add src/<ProjectName>.Application/ package FluentValidation
-dotnet add src/<ProjectName>.WebApi/      package FluentValidation.DependencyInjectionExtensions
+dotnet add src/<ProjectName>.Api/      package FluentValidation.DependencyInjectionExtensions
 
 # 7c. Add Serilog to the entry-point project
-dotnet add src/<ProjectName>.WebApi/ package Serilog.AspNetCore
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Settings.Configuration
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Sinks.Console
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Sinks.File
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Enrichers.Environment
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Enrichers.Process
-dotnet add src/<ProjectName>.WebApi/ package Serilog.Enrichers.Thread
+dotnet add src/<ProjectName>.Api/ package Serilog.AspNetCore
+dotnet add src/<ProjectName>.Api/ package Serilog.Settings.Configuration
+dotnet add src/<ProjectName>.Api/ package Serilog.Sinks.Console
+dotnet add src/<ProjectName>.Api/ package Serilog.Sinks.File
+dotnet add src/<ProjectName>.Api/ package Serilog.Enrichers.Environment
+dotnet add src/<ProjectName>.Api/ package Serilog.Enrichers.Process
+dotnet add src/<ProjectName>.Api/ package Serilog.Enrichers.Thread
 
 # 7d. Add API documentation packages to the entry-point project
-dotnet add src/<ProjectName>.WebApi/ package Microsoft.AspNetCore.OpenApi
-dotnet add src/<ProjectName>.WebApi/ package Scalar.AspNetCore
+dotnet add src/<ProjectName>.Api/ package Microsoft.AspNetCore.OpenApi
+dotnet add src/<ProjectName>.Api/ package Scalar.AspNetCore
 
 # 7e. Add test dependencies
-dotnet add tests/<ProjectName>.UnitTests/ package FluentAssertions
 dotnet add tests/<ProjectName>.UnitTests/ package NSubstitute
-dotnet add tests/<ProjectName>.IntegrationTests/ package FluentAssertions
 dotnet add tests/<ProjectName>.IntegrationTests/ package NSubstitute
 dotnet add tests/<ProjectName>.IntegrationTests/ package Microsoft.AspNetCore.Mvc.Testing
 
@@ -242,34 +245,34 @@ dotnet add tests/<ProjectName>.IntegrationTests/ package Microsoft.AspNetCore.Mv
 dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.Resilience
 
 # 9. OpenTelemetry — instrumentation is ALWAYS installed; the exporter is optional
-#    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Extensions.Hosting
-#    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Instrumentation.AspNetCore
-#    dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Instrumentation.Http
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Extensions.Hosting
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.AspNetCore
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
 #    Then add ONE exporter based on user's choice:
-#    OTLP   : dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Exporter.OpenTelemetryProtocol
-#    Console: dotnet add src/<ProjectName>.WebApi/ package OpenTelemetry.Exporter.Console
-#    Azure  : dotnet add src/<ProjectName>.WebApi/ package Azure.Monitor.OpenTelemetry.AspNetCore
+#    OTLP   : dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.OpenTelemetryProtocol
+#    Console: dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.Console
+#    Azure  : dotnet add src/<ProjectName>.Api/ package Azure.Monitor.OpenTelemetry.AspNetCore
 
-# 10. Add DB provider to BOTH WebApi (DI registration) and Persistence (migrations).
+# 10. Add DB provider to BOTH Api (DI registration) and Persistence (migrations).
 #     The provider MUST be in Persistence too: `dotnet ef` emits provider-specific
-#     annotations into the Persistence project, so provider-in-WebApi-only fails CS0246.
-#    SQL Server (default) : dotnet add src/<ProjectName>.WebApi/      package Microsoft.EntityFrameworkCore.SqlServer
+#     annotations into the Persistence project, so provider-in-Api-only fails CS0246.
+#    SQL Server (default) : dotnet add src/<ProjectName>.Api/      package Microsoft.EntityFrameworkCore.SqlServer
 #                           dotnet add src/<ProjectName>.Persistence/ package Microsoft.EntityFrameworkCore.SqlServer
-#    PostgreSQL           : dotnet add src/<ProjectName>.WebApi/      package Npgsql.EntityFrameworkCore.PostgreSQL
+#    PostgreSQL           : dotnet add src/<ProjectName>.Api/      package Npgsql.EntityFrameworkCore.PostgreSQL
 #                           dotnet add src/<ProjectName>.Persistence/ package Npgsql.EntityFrameworkCore.PostgreSQL
 ```
 
-> **DB Provider Selection**: Ask the user which database they are targeting before step 10. Add the chosen provider to **both** the WebApi project (owns DI registration) and the Persistence project (needed by `dotnet ef` migrations). Record the choice in `Directory.Packages.props` under a `<!-- DB Provider -->` comment.
+> **DB Provider Selection**: Ask the user which database they are targeting before step 10. Add the chosen provider to **both** the Api project (owns DI registration) and the Persistence project (needed by `dotnet ef` migrations). Record the choice in `Directory.Packages.props` under a `<!-- DB Provider -->` comment.
 
-> **EF Core Migrations**: The DB provider lives in both WebApi and Persistence (see step 10). `dotnet-ef` is installed as a **local tool** (committed via `.config/dotnet-tools.json`); run `dotnet tool restore` to install on a fresh clone. Always specify both projects when running migrations:
+> **EF Core Migrations**: The DB provider lives in both Api and Persistence (see step 10). `dotnet-ef` is installed as a **local tool** (committed via `.config/dotnet-tools.json`); run `dotnet tool restore` to install on a fresh clone. Always specify both projects when running migrations:
 > ```bash
 > dotnet ef migrations add <MigrationName> \
 >   --project src/<ProjectName>.Persistence \
->   --startup-project src/<ProjectName>.WebApi
+>   --startup-project src/<ProjectName>.Api
 >
 > dotnet ef database update \
 >   --project src/<ProjectName>.Persistence \
->   --startup-project src/<ProjectName>.WebApi
+>   --startup-project src/<ProjectName>.Api
 > ```
 
 ---
@@ -361,12 +364,10 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
     <!-- Alternative: Mapster (runtime mapper, flexible configuration)                   -->
     <!-- <PackageVersion Include="Mapster"       Version="LATEST_STABLE" />               -->
 
-    <!-- Testing: xUnit + NSubstitute + FluentAssertions -->
+    <!-- Testing: xUnit + NSubstitute -->
     <PackageVersion Include="xunit"                                          Version="LATEST_STABLE" />
     <PackageVersion Include="xunit.runner.visualstudio"                      Version="LATEST_STABLE" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"                         Version="LATEST_STABLE" />
-    <!-- FluentAssertions 8.x is a PAID commercial (Xceed) licence — pin to latest 7.x (Apache-2.0) -->
-    <PackageVersion Include="FluentAssertions"                               Version="LATEST_STABLE_7X" />
     <PackageVersion Include="NSubstitute"                                    Version="LATEST_STABLE" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing"               Version="LATEST_STABLE" />
   </ItemGroup>
@@ -375,7 +376,7 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
 
 ---
 
-## WebApi Entry Point (`Program.cs`)
+## Api Entry Point (`Program.cs`)
 
 ```csharp
 using Serilog;
@@ -414,7 +415,7 @@ try
     // Note: endpoint request validation is invoked manually via IValidator<T>.ValidateAndThrowAsync().
 
     // TODO: builder.Services.AddCqrs(typeof(SomeHandler).Assembly);
-    // TODO: builder.Services.AddDbContext<AppDbContext>(...);
+    // TODO: builder.Services.AddPersistence(builder.Configuration); // registers WriteDbContext (Write) + ReadDbContext (Read)
     // TODO: builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
@@ -460,7 +461,7 @@ public partial class Program;
 
 ## Endpoint Pattern
 
-Each feature module must define a dedicated static class under `src/<ProjectName>.WebApi/Endpoints/` and mount routes via an extension method. Naming convention: `<Feature>Endpoint` class, `Map<Feature>Endpoints` method.
+Each feature module must define a dedicated static class under `src/<ProjectName>.Api/Endpoints/` and mount routes via an extension method. Naming convention: `<Feature>Endpoint` class, `Map<Feature>Endpoints` method.
 
 **Rules:**
 - Class and method must both be `internal static`
@@ -612,7 +613,7 @@ Copy the full contents of `references/dotnet-rules.md` into `docs/agents/dotnet-
 Refer to `references/dotnet-domain-template.cs` (same directory as this file) for canonical implementations. **Which building blocks to scaffold depends on the chosen domain model style.**
 
 **Rich Domain Model** — scaffold all of the following:
-- One named `IXxxRepository` per aggregate in `Domain/Interfaces/` (see the `IOrderRepository` example) — **no generic `IRepository<T>`**
+- One named `IXxxRepository` per aggregate in `Domain/Interfaces/` (see the `IOrderRepository` example)
 - `IUnitOfWork` — persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
 - `IDomainEventDispatcher` in `Domain/Interfaces/` (if Domain Events enabled)
 - `IDomainEventHandler<TEvent>` in `Domain/Interfaces/` (if Domain Events enabled)
@@ -625,12 +626,12 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - Rich Domain Services, if scaffolded, are pure domain logic and do not inject repositories. Application handlers load required aggregates and pass them into domain methods/services.
 
 **Anemic Domain Model** — scaffold only:
-- One named `IXxxRepository` per entity in `Domain/Interfaces/`, typed against the plain POCO — **no generic `IRepository<T>`**, no base class or generic constraint
-- `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
+- One named `IXxxRepository` per entity in **`Application/Interfaces/`**, typed against the plain POCO. `Domain` holds no persistence interfaces.
+- `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Application/Interfaces/`
 - Concrete POCO entities in `Domain/Entities/` with no base class
-- Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — receive only Domain-defined interfaces such as an `IXxxRepository`, custom domain capability interfaces, and optionally `IDomainEventDispatcher` via primary constructor injection
+- Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — pure logic; they inject **no repositories and no dispatcher**, only custom domain capability interfaces if genuinely needed. Handlers load the data and pass it in.
 - `Result<T>` and `Result` in `Domain/Common/` — if Result Pattern enabled
-- If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Domain/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
+- If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Application/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
 - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject`
 
 **Domain Events dispatch flow — Rich Domain Model (automatic):**
@@ -644,12 +645,12 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 In-process domain event handlers must not perform irreversible or reliability-critical side effects directly. For simple workflows, perform external calls through explicit Application orchestration. If asynchronous processing is required, use retryable background work with idempotency.
 
 **Domain Events dispatch flow — Anemic Domain Model (manual):**
-1. The Application handler, or a Domain Service it calls, injects `IDomainEventDispatcher` via primary constructor.
-2. After completing repository operations and after the use case commit succeeds, the handler or Domain Service explicitly calls `await dispatcher.DispatchAsync(new[] { new SomethingHappenedEvent(...) }, ct)` for in-process side effects only.
+1. The Application handler injects `IDomainEventDispatcher` via primary constructor (Domain Services never do — the interface lives in `Application`).
+2. After completing repository operations and after the use case commit succeeds, the handler explicitly calls `await dispatcher.DispatchAsync(new[] { new SomethingHappenedEvent(...) }, ct)` for in-process side effects only.
 3. `DomainEventDispatcher` (Infrastructure) resolves and invokes `IDomainEventHandler<TEvent>` instances from DI.
 4. Application-layer event handlers execute side effects.
 
-`IDomainEventDispatcher` and `IDomainEventHandler<TEvent>` interfaces live in `Domain/Interfaces/`. The `DomainEventDispatcher` implementation lives in `Infrastructure/`. Register via assembly scanning (see `references/dotnet-domain-template.cs`).
+`IDomainEventDispatcher` and `IDomainEventHandler<TEvent>` interfaces live in `Domain/Interfaces/` (Rich) or `Application/Interfaces/` (Anemic). The `DomainEventDispatcher` implementation lives in `Infrastructure/`. Register via assembly scanning (see `references/dotnet-domain-template.cs`).
 
 ---
 
@@ -696,16 +697,14 @@ Mechanics specific to scaffolding:
 
 - Register handlers with `services.AddCqrs(typeof(SomeHandler).Assembly)` — assembly scanning only, never line-by-line. No MediatR, no in-memory event buses.
 - All DI classes use **.NET 10 Primary Constructors** — no manual `private readonly` fields.
-- `IUnitOfWork` and the per-aggregate `IXxxRepository` interfaces are defined in `Domain/Interfaces/` and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
-- **Persistence abstractions are identical in both topologies.** Handlers never inject a `DbContext` — `Application` references `Domain` only, so a concrete context is not even reachable from a handler. Two abstractions exist regardless of how many databases are deployed:
-  - `IXxxRepository` — **write side**, one named interface per aggregate in `Domain/Interfaces/`, returns tracked aggregate roots, used by CommandHandlers and Domain Services. There is no generic `IRepository<T>`.
-  - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns DTOs/projections, used by QueryHandlers. It lives in `Application` rather than `Domain` because it returns DTOs, which are an Application concept; `Domain` must not know about them.
+- `IUnitOfWork` and the per-aggregate `IXxxRepository` interfaces are defined in `Domain/Interfaces/` (Rich) or `Application/Interfaces/` (Anemic) and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
+- **The read/write split is mandatory and identical in every deployment.** Handlers never inject a `DbContext` — `Application` cannot reference EF Core, so a concrete context is not even reachable from a handler. Two abstractions always exist:
+  - `IXxxRepository` — **write side**, one named interface per aggregate/entity, returns tracked aggregates/entities, used by CommandHandlers only.
+  - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns DTOs/projections, used by QueryHandlers only. It lives in `Application` rather than `Domain` because it returns DTOs, which are an Application concept; `Domain` must not know about them.
 
-  Both are implemented in `Persistence` (`Repositories/` and `ReadRepositories/`). This keeps the topology a **deployment decision, not an architectural one**: moving between one database and two changes DI registration and `appsettings` only — no handler, no interface, and no query implementation changes. That matters in practice, because projects routinely start on one database and add a replica later, or provision two and collapse back to one on cost.
+  Both are implemented in `Persistence` (`Repositories/` and `ReadRepositories/`), the first on `WriteDbContext`, the second on `ReadDbContext`. Whether a replica physically exists is a deployment fact: with none, `ConnectionStrings:Write` and `:Read` hold the same value and the split is logical; adding a replica changes `appsettings` only — no handler, interface, or query body changes.
 
-- **Single context, two connection strings** (default): one `AppDbContext` bound to `ConnectionStrings:Write`. Both `IXxxRepository` and `IXxxReadRepository` are implemented against it; read-side implementations still use `AsNoTracking()`. `ConnectionStrings:Read` exists in config from the start and holds the same value, but nothing reads it yet — do not bind a second context to it just because the key is there (two contexts over one database is drift waiting to happen; see SKILL.md item 4).
-
-- **Read replica added** (`--read-replicas`, an upgrade from the default): two contexts sharing one model by inheritance, registered against different connections. The read-side implementations switch to `ReadDbContext`; their query bodies are unchanged. Take this step only when a replica genuinely exists — never to "prepare" for one.
+- **Two contexts sharing one model by inheritance**, registered against different connections. This is scaffolded from day one, never as a later upgrade.
 
   Derive both from a common abstract base so `OnModelCreating` and the entity configurations are written **once** — two independently configured contexts over the same tables drift, and a missed change on one side produces behaviour differences that are hard to trace.
 
@@ -752,11 +751,9 @@ Mechanics specific to scaffolding:
 
   **Which connection a handler uses** is normative and lives in `dotnet-rules.md` → CQRS Implementation → *Write vs Read routing*. Scaffold only the mechanism it depends on:
 
-  - The **only** difference between the two topologies is which context the read-side implementation takes. The query body is identical:
+  - Read-side implementations always take `ReadDbContext`; write-side implementations always take `WriteDbContext`:
     ```csharp
     // Persistence/ReadRepositories/OrderReadRepository.cs
-    // Default (one context):  (AppDbContext db)
-    // With a read replica:    (ReadDbContext db)   <-- the entire change
     public sealed class OrderReadRepository(ReadDbContext db) : IOrderReadRepository
     {
         public Task<IReadOnlyList<OrderListItemDto>> GetPagedAsync(...) =>
@@ -780,8 +777,8 @@ Mechanics specific to scaffolding:
         [FromKeyedServices("strong")] IOrderReadRepository orders)
         : IQueryHandler<GetOrderByIdQuery, Result<OrderDto>> { /* ... */ }
     ```
-    Under the default single context the keyed registration points at that same context, so handlers written this way need no change when a replica is added later.
-  - EF Core migrations and the design-time factory bind to the **Write** connection explicitly, so `dotnet ef` never issues DDL against a replica. With two contexts present `dotnet ef` can no longer infer which one to use, so migration commands must name it — `dotnet ef migrations add <Name> --context WriteDbContext` — and only `WriteDbContext` gets a design-time factory:
+    When no replica exists both connection strings are identical, so the keyed and default implementations read the same database and the handler behaves the same either way.
+  - EF Core migrations and the design-time factory bind to the **Write** connection explicitly, so `dotnet ef` never issues DDL against a replica. With two contexts present `dotnet ef` cannot infer which one to use, so migration commands must name it — `dotnet ef migrations add <Name> --context WriteDbContext` — and only `WriteDbContext` gets a design-time factory:
     ```csharp
     public sealed class WriteDbContextFactory : IDesignTimeDbContextFactory<WriteDbContext>
     {
@@ -805,6 +802,7 @@ Mechanics specific to scaffolding:
   - Health checks probe **both** connections separately; a healthy write connection says nothing about the replica.
   - `IUnitOfWork` and every write-side repository take `WriteDbContext`; `ReadDbContext` is taken only by read-side repository implementations. Both stay inside `Persistence`.
   - A transaction never spans `WriteDbContext` and `ReadDbContext`. `IUnitOfWork` owns the write context only.
+  - `AddPersistence()` registers `WriteDbContext`, `ReadDbContext`, `AppUnitOfWork` (scoped, then `IUnitOfWork` mapped to it), and every repository/read repository. `AppDbContext` is never registered.
 
 ---
 
@@ -853,7 +851,7 @@ Mechanics specific to scaffolding:
 }
 ```
 
-`Write` and `Read` are always both present, whether or not a replica exists — see SKILL.md item 4. With no replica they hold the same value and only `Write` is read by the code, so adding a replica later is a config change rather than a rename across every environment and secret store.
+`Write` and `Read` are always both present and both consumed — `WriteDbContext` binds to `Write`, `ReadDbContext` to `Read` (SKILL.md item 4). With no replica they hold the same value, so adding a replica later is a config change rather than a rename across every environment and secret store.
 
 `appsettings.Development.json` (full file — overrides production defaults):
 
@@ -874,7 +872,7 @@ Mechanics specific to scaffolding:
 }
 ```
 
-In CI/production, inject `ConnectionStrings__Write` and `ConnectionStrings__Read` as environment variables — both, even without a replica, where they carry the same value. Never commit real connection strings.
+In CI/production, inject `ConnectionStrings__Write` and `ConnectionStrings__Read` as environment variables — both are required, and without a replica they carry the same value. Never commit real connection strings.
 
 If automated auth tests require test backdoors, add a non-production-only `Testing` config section (for example `FixedOtp` or `EnableTestUserHeader`) and middleware that rejects those bypasses outside Development/Test environments. Do not scaffold this by default.
 
@@ -886,7 +884,7 @@ If automated auth tests require test backdoors, add a non-production-only `Testi
 
 - Two projects only: `tests/<ProjectName>.UnitTests/` and `tests/<ProjectName>.IntegrationTests/`.
 - The **IntegrationTests** project file must use `Microsoft.NET.Sdk.Web` (`<Project Sdk="Microsoft.NET.Sdk.Web">`) so `WebApplicationFactory` resolves the ASP.NET Core host — this is the one setup detail that is easy to miss.
-- Packages per the scaffold command list above (xUnit + NSubstitute + FluentAssertions; IntegrationTests also gets `Microsoft.AspNetCore.Mvc.Testing`).
+- Packages per the scaffold command list above (xUnit + NSubstitute; IntegrationTests also gets `Microsoft.AspNetCore.Mvc.Testing`).
 - `Program.cs` must end with `public partial class Program;` (see the entry point template) or `WebApplicationFactory<Program>` will not compile.
 
 ### WebApplicationFactory — two traps that cost real debugging time

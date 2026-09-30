@@ -207,14 +207,11 @@ public abstract class ValueObject
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FILE: Domain/Interfaces/IOrderRepository.cs
+// FILE: Domain/Interfaces/IOrderRepository.cs            (Rich)
+//       Application/Interfaces/IOrderRepository.cs       (Anemic — namespace YourProject.Application.Interfaces)
 //
-// There is NO generic IRepository<T>. Every aggregate gets its own named
-// interface declaring only the operations that aggregate actually needs.
-// A generic CRUD interface forces a lowest-common-denominator API (GetAllAsync
-// on a million-row table), gets bypassed the moment a real query appears, and
-// saves no code — the per-aggregate interface has to be written either way.
-// The same rule applies to both Rich and Anemic models; only the entity type
+// Every aggregate gets its own named interface declaring only the operations
+// that aggregate actually needs. The same rule applies to both Rich and Anemic models; only the entity type
 // referenced by the signatures differs (aggregate root vs. plain POCO).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -224,7 +221,9 @@ namespace YourProject.Domain.Interfaces;
 
 /// <summary>
 /// Write-side repository for the Order aggregate.
-/// Defined in the Domain layer so Domain Services can inject it directly.
+/// Defined in Domain under the Rich model (the aggregate's own persistence contract) and in
+/// Application under the Anemic model. Injected by CommandHandlers only — never by Domain
+/// Services and never by QueryHandlers (those use IXxxReadRepository).
 /// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
 /// Repositories operate at the aggregate boundary — never expose IQueryable&lt;T&gt;
 /// outside Persistence, and never return DTOs (that is IOrderReadRepository's job).
@@ -236,7 +235,7 @@ public interface IOrderRepository
 
     /// <summary>
     /// Aggregate-specific loads belong here, named for the use case they serve.
-    /// Declare only what a CommandHandler or Domain Service actually calls —
+    /// Declare only what a CommandHandler actually calls —
     /// do not pre-emptively add CRUD methods "for completeness".
     /// </summary>
     Task<IReadOnlyList<Order>> GetPendingForCustomerAsync(
@@ -254,19 +253,19 @@ public interface IOrderRepository
 // Notes that apply to every write-side repository interface
 //
 //  - Name it after the aggregate: IOrderRepository, ICustomerRepository.
-//    Do not introduce a shared base interface to "avoid repetition" — the
-//    repetition is the point; each aggregate's surface is deliberately its own.
+//    No shared base interface — each aggregate's surface is its own.
 //  - No GetAllAsync unless the table is genuinely bounded (lookup/reference
 //    data). Unbounded reads belong on the read side with paging.
 //  - Methods return tracked aggregates. Reads that feed a screen go through
 //    IXxxReadRepository in Application/Interfaces/ and return DTOs.
 //  - Repositories never call SaveChanges — the commit boundary is IUnitOfWork.
-//  - Anemic model: identical shape, with the plain POCO entity type in place
-//    of the aggregate root. No base class or generic constraint is involved.
+//  - Anemic model: identical shape, declared in Application/Interfaces/, with the
+//    plain POCO entity type in place of the aggregate root.
 // ════════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FILE: Domain/Interfaces/IUnitOfWork.cs
+// FILE: Domain/Interfaces/IUnitOfWork.cs   (Rich)
+//       Application/Interfaces/IUnitOfWork.cs (Anemic — namespace YourProject.Application.Interfaces)
 //
 // The contract is persistence-agnostic and is used by both Rich and Anemic models.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,7 +297,7 @@ public interface IUnitOfWork : IAsyncDisposable
 // using YourProject.Domain.Entities;        // AggregateRoot<T>
 // using YourProject.Domain.Interfaces;      // IUnitOfWork, IDomainEventDispatcher
 //
-// public sealed class AppUnitOfWork(AppDbContext dbContext, IDomainEventDispatcher dispatcher)
+// public sealed class AppUnitOfWork(WriteDbContext dbContext, IDomainEventDispatcher dispatcher)
 //     : IUnitOfWork
 // {
 //     private IDbContextTransaction? _transaction;
@@ -443,9 +442,9 @@ public interface IUnitOfWork : IAsyncDisposable
 // using System.Data.Common;
 // using Microsoft.EntityFrameworkCore;
 // using Microsoft.EntityFrameworkCore.Storage;
-// using YourProject.Domain.Interfaces;      // IUnitOfWork
+// using YourProject.Application.Interfaces; // IUnitOfWork
 //
-// public sealed class AppUnitOfWork(AppDbContext dbContext) : IUnitOfWork
+// public sealed class AppUnitOfWork(WriteDbContext dbContext) : IUnitOfWork
 // {
 //     private IDbContextTransaction? _transaction;
 //
@@ -564,7 +563,7 @@ public interface IUnitOfWork : IAsyncDisposable
 // }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FILE: Domain/Interfaces/IDomainEventDispatcher.cs
+// FILE: Domain/Interfaces/IDomainEventDispatcher.cs   (Rich; Anemic: Application/Interfaces/)
 // ─────────────────────────────────────────────────────────────────────────────
 
 using YourProject.Domain.Events;
@@ -583,7 +582,7 @@ public interface IDomainEventDispatcher
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FILE: Domain/Interfaces/IDomainEventHandler.cs
+// FILE: Domain/Interfaces/IDomainEventHandler.cs   (Rich; Anemic: Application/Interfaces/)
 // ─────────────────────────────────────────────────────────────────────────────
 
 using YourProject.Domain.Events;
@@ -622,7 +621,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     }
 // }
 
-// DI registration (in WebApi or Infrastructure DI extension):
+// DI registration (in Api or Infrastructure DI extension):
 // services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 // services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedEventHandler>();
 // ── or use assembly scanning ─────────────────────────────────────────────────────────────
