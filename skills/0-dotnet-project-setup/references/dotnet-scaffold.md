@@ -520,7 +520,7 @@ When FastEndpoints is chosen (rank 2 in SKILL.md item 10), these conventions rep
 - Derive from `Endpoint<TRequest, TResponse>`, or `EndpointWithoutRequest<TResponse>` when there is no request body
 - `Configure()` declares the route, auth, and OpenAPI metadata; `ExecuteAsync()` dispatches to CQRS and does nothing else
 - **`ExecuteAsync` returns `Task<TResponse>`** in FastEndpoints 8.x — return the response object directly. The older `Task` + `await SendOkAsync(...)` pattern found in many online samples does **not** compile against these generic base classes (CS0508)
-- Request/response records may co-locate in the endpoint file (they serve that one class)
+- Request/response records may co-locate in the endpoint file
 
 ```csharp
 internal sealed class CreateSupplierEndpoint(ICommandDispatcher commands)
@@ -659,39 +659,6 @@ In-process domain event handlers must not perform irreversible or reliability-cr
 Follow the template in `references/dotnet-cqrs-template.cs` (same directory as this file). Place the generated code in `src/<ProjectName>.Application/Cqrs/CQRS.cs` (namespace `<ProjectName>.Application.Cqrs`) — a single file inside the Application project, not a standalone project. Business commands/queries/handlers go in Application's `Commands/`/`Queries/`/`EventHandlers/` folders (namespace `<ProjectName>.Application.*`).
 
 > **The normative CQRS rules — command/query DB routing, the persistence-agnostic `IUnitOfWork` contract, EF+Dapper transaction sharing, and the `AppUnitOfWork` scoping rule — live in `dotnet-rules.md` → CQRS Implementation & Data Access. Do not restate them; this section only covers the mechanical wiring.**
-
-**File layout — one file per use case.** A command/query lives in the same file as its handler, named after the message. This is the exception to one-class-per-file spelled out in `dotnet-rules.md` → One Class Per File:
-
-```
-Application/Modules/Supplier/
-├─ Commands/
-│  ├─ RegisterSupplierCommand.cs      # RegisterSupplierCommand + RegisterSupplierCommandHandler
-│  ├─ ApproveSupplierCommand.cs       # ApproveSupplierCommand  + ApproveSupplierCommandHandler
-│  └─ SetSupplierActivationCommand.cs
-└─ Queries/
-   ├─ GetSupplierListQuery.cs         # GetSupplierListQuery    + GetSupplierListQueryHandler
-   └─ GetSupplierByIdQuery.cs
-```
-
-```csharp
-// Commands/ApproveSupplierCommand.cs — the whole use case, readable top to bottom.
-public sealed record ApproveSupplierCommand(Guid SupplierId, string ApprovedBy) : ICommand<Result>;
-
-public sealed class ApproveSupplierCommandHandler(
-    ISupplierRepository suppliers,
-    IUnitOfWork unitOfWork,
-    IDomainEventDispatcher dispatcher,
-    TimeProvider timeProvider)
-    : ICommandHandler<ApproveSupplierCommand, Result>
-{
-    public async Task<Result> HandleAsync(ApproveSupplierCommand command, CancellationToken ct = default)
-    {
-        // …
-    }
-}
-```
-
-The contract and the logic that honours it change together, so keeping them together removes a navigation step from every edit — and a file that grows uncomfortable is telling you the *use case* is too big, which is a more useful signal than a long folder listing. Do not extend this to unrelated types: two commands never share a file, and a module-wide `XxxDtos.cs` is still a one-class-per-file violation.
 
 Mechanics specific to scaffolding:
 
