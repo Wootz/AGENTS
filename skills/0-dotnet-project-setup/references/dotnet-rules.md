@@ -81,7 +81,7 @@
   - **Integration Events** (cross-service) — optional. Enable only when the project has confirmed cross-service asynchronous communication. Events are defined in `Application/IntegrationEvents/`. `IEventBus` interface lives in `Application/Interfaces/`; the broker-specific implementation lives in `Infrastructure/`.
   - Email, external API calls, cross-service notifications, and durable projections must not be performed directly in in-process domain event handlers. Prefer explicit Application orchestration for simple workflows; use retryable background work with idempotency when asynchronous processing is required.
   - Integration event consumers must be **idempotent** — processing the same event twice must produce the same outcome.
-- 🪵 **Logging**: Standardize exclusively on **Serilog**. All log calls **must** use structured message templates with named placeholders — string interpolation in log messages is strictly prohibited.
+- 🪵 **Logging**: Standardize exclusively on **Serilog** — mandatory in every project; never ask whether to install it. All log calls **must** use structured message templates with named placeholders — string interpolation in log messages is strictly prohibited.
   ```csharp
   // ❌ Forbidden — string interpolation destroys structure
   logger.LogInformation($"User {userId} purchased {productId} for {amount}");
@@ -94,22 +94,49 @@
   - **Request logging**: Always call `app.UseSerilogRequestLogging(...)` with a custom `MessageTemplate` that includes `{RequestMethod}`, `{RequestPath}`, `{StatusCode}`, and `{Elapsed}`. This replaces the verbose default ASP.NET Core request logging with a single structured entry per request.
   - **Enrichers** (mandatory, add to Api project): `Serilog.Enrichers.Environment` (`WithMachineName`), `Serilog.Enrichers.Process` (`WithProcessId`), `Serilog.Enrichers.Thread` (`WithThreadId`). Register via `.Enrich.WithMachineName().Enrich.WithProcessId().Enrich.WithThreadId()`.
   - **Configuration**: Serilog must be fully configured via `appsettings.json` using `ReadFrom.Configuration()`. Hard-coded sink configuration in `Program.cs` is forbidden. Use `ReadFrom.Services()` to allow DI-resolved sinks.
+  - **Trace correlation**: Every sink `outputTemplate` must include `{TraceId}` and `{SpanId}`. Serilog captures them from `Activity.Current`, so each log line can be matched to its OpenTelemetry trace.
   - **Log levels**: Production default is `Information`; override `Microsoft.*` and `System.*` to `Warning`; Development overrides to `Debug`. EF Core SQL commands: `Microsoft.EntityFrameworkCore.Database.Command` → `Information` in Development only.
   - **Sensitive data**: Never log passwords, tokens, PII, or connection strings. Destructure objects explicitly; do not log entire request/response bodies unless redacted.
-- 📊 **Observability (OpenTelemetry)**: During project setup, ask the user whether to integrate **OpenTelemetry**. Recommended for production services, microservices, or any service communicating with external systems. If enabled:
+- 📊 **Observability (OpenTelemetry)**: Mandatory in every project — never ask whether to install it.
+  - **Scope**: The scaffold wires OpenTelemetry for **traces and metrics**; logs and traces are linked by the `{TraceId}`/`{SpanId}` in the Serilog output templates. Where logs are stored (file, console, OTLP, a vendor backend) is a per-project decision made after scaffolding — the Console + File sinks are only the starting point, changed through `appsettings.json` `WriteTo`.
   - Install `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http` in the `Api` project.
-  - Ask which exporter to use: **OTLP** (Jaeger/Zipkin/Collector), **Console** (dev/debug), or **Azure Monitor**.
+  - **Exporter** defaults to none — without one nothing is emitted. Add exactly one only when an observability backend is known: **OTLP** (Jaeger/Zipkin/Collector), **Console** (dev/debug), or **Azure Monitor**.
   - Register in `Program.cs`:
   ```csharp
   builder.Services.AddOpenTelemetry()
+      .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
       .WithTracing(tracing => tracing
           .AddAspNetCoreInstrumentation()
-          .AddHttpClientInstrumentation()
-          .AddOtlpExporter())  // or .AddConsoleExporter() for dev
+          .AddHttpClientInstrumentation())
       .WithMetrics(metrics => metrics
           .AddAspNetCoreInstrumentation()
-          .AddHttpClientInstrumentation()
-          .AddOtlpExporter());
+          .AddHttpClientInstrumentation());
+      // Exporter — chain exactly one, only when chosen:
+      //   OTLP          → .UseOtlpExporter()   (endpoint from OTEL_EXPORTER_OTLP_ENDPOINT)
+      //   Console       → .AddConsoleExporter() inside both WithTracing and WithMetrics
+      //   Azure Monitor → .UseAzureMonitor()   (from APPLICATIONINSIGHTS_CONNECTION_STRING)
+  ```
+  - **Background work must start its own `Activity`**: HTTP requests get one automatically from the AspNetCore instrumentation; `BackgroundService`, scheduled jobs, and message consumers do not, so their logs carry an empty `TraceId`. Start one `Activity` per unit of work (one loop iteration, one message) from an `ActivitySource`, and register that source with `.AddSource(...)` in `WithTracing` — an unregistered source makes `StartActivity()` return `null`.
+  ```csharp
+  // Program.cs: .WithTracing(tracing => tracing.AddSource(OrderSyncWorker.ActivitySourceName) ...)
+  internal sealed class OrderSyncWorker(ILogger<OrderSyncWorker> logger) : BackgroundService
+  {
+      public const string ActivitySourceName = "Acme.OrderService.OrderSync";
+      private static readonly ActivitySource Source = new(ActivitySourceName);
+
+      protected override async Task ExecuteAsync(CancellationToken ct)
+      {
+          while (!ct.IsCancellationRequested)
+          {
+              using (Source.StartActivity("OrderSync.Run"))
+              {
+                  logger.LogInformation("Order sync started"); // carries this run's TraceId
+                  // ... one unit of work ...
+              }
+              await Task.Delay(TimeSpan.FromMinutes(1), ct);
+          }
+      }
+  }
   ```
 - 🔗 **HTTP Client & Resilience**: Any outbound HTTP call to an external Web API **must** use a named/typed `HttpClient` registered via `AddHttpClient(...)` with **`Microsoft.Extensions.Http.Resilience`**. Call `.AddStandardResilienceHandler()` on every registration — this enables the built-in defense pipeline: Rate Limiting → Timeout → Retry → Circuit Breaker. Raw `HttpClient` instantiation (`new HttpClient()`) is strictly prohibited.
   ```csharp

@@ -266,11 +266,8 @@ case "$MAPPER" in
   none) ;;
 esac
 
-# OpenTelemetry (entry-point project) — instrumentation is always installed; --otel picks the
-# exporter only. Without an exporter nothing is emitted and there is no runtime
-# cost, but turning observability on later is a config change rather than a
-# Program.cs rewrite. A project that genuinely wants none can delete these three
-# packages and the AddOpenTelemetry() block — cheaper than wiring them back in.
+# OpenTelemetry (entry-point project) — mandatory (traces + metrics). --otel picks
+# the exporter only; without one nothing is emitted.
 add "$WCS" OpenTelemetry.Extensions.Hosting
 add "$WCS" OpenTelemetry.Instrumentation.AspNetCore
 add "$WCS" OpenTelemetry.Instrumentation.Http
@@ -329,7 +326,7 @@ cat <<EOF
 >>> Directory.Packages.props now holds resolved latest-stable versions.
 
 NEXT (done by the skill, not this script — they are context-dependent):
-  - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenAPI+Scalar, etc.)
+  - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenTelemetry, OpenAPI+Scalar, etc.)
   - Copy CQRS core from dotnet-cqrs-template.cs into $S.Application/Cqrs/CQRS.cs (namespace $NAME.Application.Cqrs; replace YourProject -> $NAME)
   - Scaffold domain building blocks from dotnet-domain-template.cs per chosen model style
   - Write appsettings.json / appsettings.Development.json (ConnectionStrings:Write + :Read, same value without a replica)
