@@ -244,11 +244,11 @@ dotnet add tests/<ProjectName>.IntegrationTests/ package Microsoft.AspNetCore.Mv
 #    (Infrastructure owns the AddHttpClient + AddStandardResilienceHandler registrations)
 dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.Resilience
 
-# 9. OpenTelemetry — instrumentation is ALWAYS installed; the exporter is optional
-#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Extensions.Hosting
-#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.AspNetCore
-#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
-#    Then add ONE exporter based on user's choice:
+# 9. OpenTelemetry — mandatory; the exporter is optional
+dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Extensions.Hosting
+dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.AspNetCore
+dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
+#    Exporter — add ONE only when an observability backend is chosen:
 #    OTLP   : dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.OpenTelemetryProtocol
 #    Console: dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.Console
 #    Azure  : dotnet add src/<ProjectName>.Api/ package Azure.Monitor.OpenTelemetry.AspNetCore
@@ -312,11 +312,11 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
     <!-- HTTP Client Resilience: required for any outbound HTTP call to external APIs -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience"           Version="LATEST_STABLE" />
 
-    <!-- OpenTelemetry: instrumentation packages are always added; the exporter line only when one is chosen -->
-    <!-- <PackageVersion Include="OpenTelemetry.Extensions.Hosting"           Version="LATEST_STABLE" /> -->
-    <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"   Version="LATEST_STABLE" /> -->
-    <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.Http"         Version="LATEST_STABLE" /> -->
-    <!-- Exporters: choose ONE based on user's target backend -->
+    <!-- OpenTelemetry: mandatory (traces + metrics) -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting"               Version="LATEST_STABLE" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"       Version="LATEST_STABLE" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http"             Version="LATEST_STABLE" />
+    <!-- Exporters: add ONE only when an observability backend is chosen -->
     <!-- OTLP:          <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="LATEST_STABLE" /> -->
     <!-- Console:       <PackageVersion Include="OpenTelemetry.Exporter.Console"               Version="LATEST_STABLE" /> -->
     <!-- Azure Monitor: <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore"       Version="LATEST_STABLE" /> -->
@@ -379,6 +379,9 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
 ## Api Entry Point (`Program.cs`)
 
 ```csharp
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
 using Scalar.AspNetCore;
@@ -403,6 +406,20 @@ try
         .Enrich.WithMachineName()
         .Enrich.WithProcessId()
         .Enrich.WithThreadId());
+
+    // OpenTelemetry — traces + metrics (Serilog logs link to them via {TraceId}/{SpanId})
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
+        .WithTracing(tracing => tracing
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation())
+        .WithMetrics(metrics => metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation());
+        // Exporter (--otel) — chain exactly one, only when chosen:
+        //   otlp    → .UseOtlpExporter()
+        //   console → .AddConsoleExporter() inside both WithTracing and WithMetrics
+        //   azure   → .UseAzureMonitor()
 
     // OpenAPI (Microsoft.AspNetCore.OpenApi + Scalar UI)
     builder.Services.AddOpenApi();
@@ -796,7 +813,7 @@ Mechanics specific to scaffolding:
       {
         "Name": "Console",
         "Args": {
-          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {SpanId} {Message:lj} {Properties:j}{NewLine}{Exception}"
         }
       },
       {
@@ -805,7 +822,7 @@ Mechanics specific to scaffolding:
           "path": "logs/app-.log",
           "rollingInterval": "Day",
           "retainedFileCountLimit": 30,
-          "outputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+          "outputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {TraceId} {SpanId} {Message:lj} {Properties:j}{NewLine}{Exception}"
         }
       }
     ],
