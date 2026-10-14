@@ -94,16 +94,16 @@ Ask these in the same upfront message and include the recommended default. If th
    Never propose Controllers yourself — accept them only to match an existing codebase. Whichever is chosen, the conventions in `references/dotnet-scaffold.md` → Endpoint Pattern apply; it covers Minimal API and FastEndpoints.
 11. **Object mapper** — **do not ask; always Mapperly** (`--mapper mapperly`). Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time. Switch to **Mapster** or none only if the user asks; it is offered in the Step 1.5 summary.
    - 🚫 **AutoMapper is strictly forbidden** regardless of user preference.
-12. **OpenTelemetry** — **do not ask whether to install it; instrumentation is always scaffolded** (`OpenTelemetry.Extensions.Hosting`, `.Instrumentation.AspNetCore`, `.Instrumentation.Http`). With no exporter configured nothing is emitted and development is unaffected, so the cost of having it is near zero while the cost of retrofitting it is a `Program.cs` rewrite.
-   - **Exporter defaults to none** (`--otel none`). Ask which exporter to wire up (OTLP, Console, Azure Monitor) **only** when the user has described an observability backend or a production/microservice deployment; otherwise leave it unset — turning it on later is a configuration change, not a code change.
-   - A project that genuinely wants no OpenTelemetry at all deletes the three packages and the `AddOpenTelemetry()` block; that is cheaper than wiring them in afterwards.
+12. **Serilog + OpenTelemetry** — **both mandatory; never ask whether to install either.** Serilog handles logging; OpenTelemetry is wired for traces and metrics (`OpenTelemetry.Extensions.Hosting`, `.Instrumentation.AspNetCore`, `.Instrumentation.Http`, registered by the `Program.cs` template). Logs link to traces by `{TraceId}`/`{SpanId}` in the Serilog output templates (`references/dotnet-rules.md` → Logging, Observability).
+   - **Log storage is not decided here.** The scaffold ships Console + File sinks as a starting point; where logs end up is the project's decision after scaffolding, made through `appsettings.json`. Do not ask about it during setup.
+   - **Exporter defaults to none** (`--otel none`) — without one nothing is emitted. Ask which exporter to wire up (OTLP, Console, Azure Monitor) **only** when the user has described an observability backend or a production/microservice deployment; otherwise leave it unset — adding one later is one package plus one call in the `AddOpenTelemetry()` block.
 13. **Auth mechanism** — JWT, API Key, none?
 
 ## Step 1.5: Confirm Before Scaffolding
 
 ⚠️ **Mandatory. Do not run `scripts/scaffold.sh` until the user has replied to this summary.**
 
-Several items above are applied without being asked (Result Pattern, Minimal API, Mapperly, OpenTelemetry instrumentation). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
+Several items above are applied without being asked (Result Pattern, Minimal API, Mapperly, OTel exporter none). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
 
 Render it as a table with a **Source** column so defaults are visually distinct from the user's own answers:
 
@@ -120,13 +120,15 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 | EDD                | Skipped                  | you       |
 | Endpoints          | Minimal API route groups | default   |
 | Object mapper      | Mapperly                 | default   |
-| OpenTelemetry      | Instrumentation, no exporter | default |
+| Logging            | Serilog                  | fixed     |
+| OpenTelemetry      | Traces + metrics         | fixed     |
+| OTel exporter      | None                     | default   |
 | Auth               | JWT                      | you       |
 ```
 
 Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
 
-- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; Mapster or no mapper; an OTel exporter, or removing OpenTelemetry entirely).
+- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split, Serilog, OpenTelemetry — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; Mapster or no mapper; an OTLP, Console or Azure Monitor exporter).
 - If the user changes something, re-render the table with the change applied and confirm again.
 - "Use sensible defaults" earlier in the conversation does **not** skip this step — it fills the table in, and the table is still shown.
 
@@ -144,7 +146,7 @@ When the user explicitly authorizes defaults, use:
 - CQRS + read/write split is fixed (item 4): `WriteDbContext` on `ConnectionStrings:Write`, `ReadDbContext` on `ConnectionStrings:Read`, same value when no replica exists. CommandHandlers use `IXxxRepository`; QueryHandlers use `IXxxReadRepository`; neither ever injects a `DbContext` or the other family. Routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
 - Minimal API route groups.
 - Mapperly.
-- OpenTelemetry instrumentation always installed; exporter left as none unless the user names an observability backend.
+- Serilog and OpenTelemetry are fixed (item 12); OTel exporter left as none unless the user names an observability backend.
 - Auth: ask if not specified. Do not assume public or no-auth for production APIs.
 
 ---
@@ -270,14 +272,14 @@ Before declaring the scaffold complete, verify:
 - [ ] Integration-test config is injected with `UseSetting`, not `ConfigureAppConfiguration` (the app's own `appsettings.{Env}.json` overrides the latter and its secret fields are empty by policy); scopes resolving `IUnitOfWork` use `CreateAsyncScope()`
 - [ ] `Directory.Packages.props` contains verified latest stable versions, no `LATEST_STABLE` placeholders, no preview/beta/RC packages
 - [ ] Serilog bootstrap logger in `Program.cs`; `UseSerilogRequestLogging` registered; enrichers installed
-- [ ] `appsettings.json` has full Serilog config (sinks, enrichers, level overrides); no hard-coded sink setup in `Program.cs`
+- [ ] `appsettings.json` has full Serilog config (sinks, enrichers, level overrides); every sink `outputTemplate` includes `{TraceId}` and `{SpanId}`; no hard-coded sink setup in `Program.cs`
 - [ ] Environment variables used for all secrets — nothing hardcoded
 - [ ] `.gitignore` includes secrets, build output, and local env files
 - [ ] `.config/dotnet-tools.json` exists and is committed (contains `dotnet-ef` local tool)
 - [ ] Root `AGENTS.md` created as a short index/policy file, not a full rules dump; `docs/agents/dotnet-rules.md` contains the complete .NET rules and is referenced from `AGENTS.md`
 - [ ] README created with: project purpose, how to run, how to test
 - [ ] Unit and integration test projects scaffolded; meaningful tests cover generated feature skeletons and user-confirmed workflows
-- [ ] If OpenTelemetry was enabled: OTel packages installed, exporter configured, `Program.cs` wired up
+- [ ] `Program.cs` registers `AddOpenTelemetry()` with `ConfigureResource(AddService(...))` and AspNetCore + HttpClient instrumentation for tracing and metrics; an exporter package and call exist only if one was chosen
 
 ---
 
