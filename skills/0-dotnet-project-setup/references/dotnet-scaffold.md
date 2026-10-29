@@ -63,7 +63,7 @@ Key principles:
 │   │   ├── IntegrationEvents/                  # Optional: cross-service integration events (if EDD enabled)
 │   │   ├── Interfaces/                         # IXxxReadRepository (always); Anemic also: IXxxRepository, IUnitOfWork, IDomainEventDispatcher, IDomainEventHandler<TEvent>; optional IEventBus / application-only ports
 │   │   ├── Validators/                         # FluentValidation validators
-│   │   ├── Mappers/                            # Mapperly / Mapster mapper classes (if used)
+│   │   ├── Mappers/                            # Mapperly mapper classes
 │   │   └── <ProjectName>.Application.csproj
 │   ├── <ProjectName>.Infrastructure/           # External integrations (email, storage, queues)
 │   │   ├── Services/
@@ -244,14 +244,11 @@ dotnet add tests/<ProjectName>.IntegrationTests/ package Microsoft.AspNetCore.Mv
 #    (Infrastructure owns the AddHttpClient + AddStandardResilienceHandler registrations)
 dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.Resilience
 
-# 9. OpenTelemetry — mandatory; the exporter is optional
-dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Extensions.Hosting
-dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.AspNetCore
-dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
-#    Exporter — add ONE only when an observability backend is chosen:
-#    OTLP   : dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.OpenTelemetryProtocol
-#    Console: dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.Console
-#    Azure  : dotnet add src/<ProjectName>.Api/ package Azure.Monitor.OpenTelemetry.AspNetCore
+# 9. OpenTelemetry — only with --otel otlp (--otel none installs nothing here)
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Extensions.Hosting
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.AspNetCore
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
+#    dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Exporter.OpenTelemetryProtocol
 
 # 10. Add DB provider to BOTH Api (DI registration) and Persistence (migrations).
 #     The provider MUST be in Persistence too: `dotnet ef` emits provider-specific
@@ -294,7 +291,7 @@ dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
 
 ### `Directory.Packages.props`
 
-> ⚠️ **Version Policy**: Do NOT hardcode version numbers here. At scaffold time, look up and use the **current latest stable** version for every package. Never use preview, beta, or RC releases.
+> ⚠️ **Version Policy**: Do NOT hardcode version numbers here. At scaffold time, look up and use the **latest stable version the target framework can use** for every package — skip any version that only targets a newer .NET than `Directory.Build.props` sets. Never use preview, beta, or RC releases.
 > ⚠️ **CPM Policy**: Project `.csproj` files must not contain `Version="..."` on `<PackageReference>` entries. All package versions live only in this file.
 
 ```xml
@@ -312,14 +309,11 @@ dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
     <!-- HTTP Client Resilience: required for any outbound HTTP call to external APIs -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience"           Version="LATEST_STABLE" />
 
-    <!-- OpenTelemetry: mandatory (traces + metrics) -->
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting"               Version="LATEST_STABLE" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"       Version="LATEST_STABLE" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http"             Version="LATEST_STABLE" />
-    <!-- Exporters: add ONE only when an observability backend is chosen -->
-    <!-- OTLP:          <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="LATEST_STABLE" /> -->
-    <!-- Console:       <PackageVersion Include="OpenTelemetry.Exporter.Console"               Version="LATEST_STABLE" /> -->
-    <!-- Azure Monitor: <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore"       Version="LATEST_STABLE" /> -->
+    <!-- OpenTelemetry: only when the otlp option is chosen (logs + traces + metrics over OTLP) -->
+    <!-- <PackageVersion Include="OpenTelemetry.Extensions.Hosting"               Version="LATEST_STABLE" /> -->
+    <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"       Version="LATEST_STABLE" /> -->
+    <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.Http"             Version="LATEST_STABLE" /> -->
+    <!-- <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol"   Version="LATEST_STABLE" /> -->
 
     <!-- API Documentation: Microsoft OpenAPI + Scalar UI (NO Swashbuckle) -->
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi"                   Version="LATEST_STABLE" />
@@ -349,20 +343,15 @@ dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
     <!-- Data Access: Dapper — complex/reporting queries in Persistence project -->
     <PackageVersion Include="Dapper"                                         Version="LATEST_STABLE" />
 
-    <!-- Object Mapping: choose ONE during project setup (AutoMapper is FORBIDDEN)       -->
+    <!-- Object Mapping: Mapperly, fixed (AutoMapper is FORBIDDEN)                       -->
     <!-- Mappers live in Application/Mappers/ and are referenced from Application only   -->
-    <!--                                                                                  -->
-    <!-- Recommended: Mapperly (source-gen, zero runtime overhead, compile-time safe)    -->
     <!-- IMPORTANT: Mapperly is a source generator. When adding to Application.csproj,   -->
     <!--   use PrivateAssets="all" so it does not leak as a transitive runtime dep:       -->
     <!--   dotnet add src/<ProjectName>.Application/ package Riok.Mapperly                -->
     <!--   Then in Application.csproj, the PackageReference must have:                   -->
     <!--     <IncludeAssets>compile; runtime; build; native; contentfiles; analyzers</IncludeAssets> -->
     <!--     <PrivateAssets>all</PrivateAssets>                                           -->
-    <!-- <PackageVersion Include="Riok.Mapperly" Version="LATEST_STABLE" />               -->
-    <!--                                                                                  -->
-    <!-- Alternative: Mapster (runtime mapper, flexible configuration)                   -->
-    <!-- <PackageVersion Include="Mapster"       Version="LATEST_STABLE" />               -->
+    <PackageVersion Include="Riok.Mapperly"                                  Version="LATEST_STABLE" />
 
     <!-- Testing: xUnit + NSubstitute -->
     <PackageVersion Include="xunit"                                          Version="LATEST_STABLE" />
@@ -378,10 +367,10 @@ dotnet add src/<ProjectName>.Api/ package OpenTelemetry.Instrumentation.Http
 
 ## Api Entry Point (`Program.cs`)
 
+The template below is the `--otel none` version. With `--otel otlp`, apply the replacement in **OpenTelemetry (`--otel otlp`)** below. In both, replace `<ProjectName>` with the real project name.
+
 ```csharp
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
+using System.Diagnostics;
 using Serilog;
 using Serilog.Events;
 using Scalar.AspNetCore;
@@ -398,28 +387,19 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // Logging — full config read from appsettings.json
+    // Logging — full config (sinks, enrichers, levels) read from appsettings.json
     builder.Host.UseSerilog((ctx, services, lc) => lc
         .ReadFrom.Configuration(ctx.Configuration)
-        .ReadFrom.Services(services)   // allows ILogger sinks resolved from DI
-        .Enrich.FromLogContext()
-        .Enrich.WithMachineName()
-        .Enrich.WithProcessId()
-        .Enrich.WithThreadId());
+        .ReadFrom.Services(services));  // allows ILogger sinks resolved from DI
 
-    // OpenTelemetry — traces + metrics (Serilog logs link to them via {TraceId}/{SpanId})
-    builder.Services.AddOpenTelemetry()
-        .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
-        .WithTracing(tracing => tracing
-            .AddAspNetCoreInstrumentation()
-            .AddHttpClientInstrumentation())
-        .WithMetrics(metrics => metrics
-            .AddAspNetCoreInstrumentation()
-            .AddHttpClientInstrumentation());
-        // Exporter (--otel) — chain exactly one, only when chosen:
-        //   otlp    → .UseOtlpExporter()
-        //   console → .AddConsoleExporter() inside both WithTracing and WithMetrics
-        //   azure   → .UseAzureMonitor()
+    // Tracing without OpenTelemetry: lets the project's own ActivitySources create
+    // activities so background work carries a TraceId. Remove when OpenTelemetry is added.
+    using var activityListener = new ActivityListener
+    {
+        ShouldListenTo = source => source.Name.StartsWith("<ProjectName>.", StringComparison.Ordinal),
+        Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.PropagationData
+    };
+    ActivitySource.AddActivityListener(activityListener);
 
     // OpenAPI (Microsoft.AspNetCore.OpenApi + Scalar UI)
     builder.Services.AddOpenApi();
@@ -472,6 +452,36 @@ finally
 /// to compile. Do not delete.
 /// </summary>
 public partial class Program;
+```
+
+### OpenTelemetry (`--otel otlp`)
+
+Replace the `UseSerilog(...)` call and the whole `ActivityListener` block of the template above with the block below — the listener must go, because sampling takes the most permissive listener and it would override the OTel sampler. Add `using OpenTelemetry;` (for `UseOtlpExporter()`), `using OpenTelemetry.Metrics;`, `using OpenTelemetry.Resources;`, `using OpenTelemetry.Trace;` and drop `using System.Diagnostics;`.
+
+```csharp
+    // Logging — Serilog stays the only entry point (Console/File sinks unchanged);
+    // writeToProviders forwards its events to the OTel logger provider.
+    // ClearProviders stops the default Console provider from printing every line twice.
+    builder.Logging.ClearProviders();
+    builder.Host.UseSerilog((ctx, services, lc) => lc
+        .ReadFrom.Configuration(ctx.Configuration)
+        .ReadFrom.Services(services),
+        writeToProviders: true);
+
+    // OpenTelemetry — logs + traces + metrics over OTLP.
+    // Backend chosen by OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL, never in code.
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
+        .WithTracing(tracing => tracing
+            .AddSource("<ProjectName>.*")
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation())
+        .WithMetrics(metrics => metrics
+            .AddMeter("<ProjectName>.*")
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation())
+        .WithLogging()
+        .UseOtlpExporter();
 ```
 
 ---
@@ -809,14 +819,14 @@ Mechanics specific to scaffolding:
         "System": "Warning"
       }
     },
-    "WriteTo": [
-      {
+    "WriteTo": {
+      "Console": {
         "Name": "Console",
         "Args": {
           "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {SpanId} {Message:lj} {Properties:j}{NewLine}{Exception}"
         }
       },
-      {
+      "File": {
         "Name": "File",
         "Args": {
           "path": "logs/app-.log",
@@ -825,7 +835,7 @@ Mechanics specific to scaffolding:
           "outputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {TraceId} {SpanId} {Message:lj} {Properties:j}{NewLine}{Exception}"
         }
       }
-    ],
+    },
     "Enrich": [ "FromLogContext", "WithMachineName", "WithProcessId", "WithThreadId" ]
   },
   "ConnectionStrings": {
@@ -847,6 +857,14 @@ Mechanics specific to scaffolding:
       "Override": {
         "Microsoft.EntityFrameworkCore.Database.Command": "Information"
       }
+    },
+    "WriteTo": {
+      "Console": {
+        "Name": "Console",
+        "Args": {
+          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {SpanId} {Message:lj} {Properties:j}{NewLine}{Exception}"
+        }
+      }
     }
   },
   "ConnectionStrings": {
@@ -857,6 +875,11 @@ Mechanics specific to scaffolding:
 ```
 
 In CI/production, inject `ConnectionStrings__Write` and `ConnectionStrings__Read` as environment variables — both are required, and without a replica they carry the same value. Never commit real connection strings.
+
+Logging and telemetry settings that vary per deployment are also environment variables (rules: `dotnet-rules.md` → Logging, Connecting an external backend):
+
+- `Serilog__WriteTo__File__Args__path` — points the log file at persistent storage; works because `WriteTo` uses named keys.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` — `--otel otlp` only; select the backend.
 
 If automated auth tests require test backdoors, add a non-production-only `Testing` config section (for example `FixedOtp` or `EnableTestUserHeader`) and middleware that rejects those bypasses outside Development/Test environments. Do not scaffold this by default.
 

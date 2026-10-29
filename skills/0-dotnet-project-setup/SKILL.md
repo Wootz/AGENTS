@@ -92,18 +92,18 @@ Ask these in the same upfront message and include the recommended default. If th
    | 3 | **MVC Controller** | Only to match an existing solution, or a real MVC dependency (View rendering) |
 
    Never propose Controllers yourself — accept them only to match an existing codebase. Whichever is chosen, the conventions in `references/dotnet-scaffold.md` → Endpoint Pattern apply; it covers Minimal API and FastEndpoints.
-11. **Object mapper** — **do not ask; always Mapperly** (`--mapper mapperly`). Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time. Switch to **Mapster** or none only if the user asks; it is offered in the Step 1.5 summary.
+11. **Object mapper** — **fixed: always Mapperly; never ask and never offer an alternative.** Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time.
    - 🚫 **AutoMapper is strictly forbidden** regardless of user preference.
-12. **Serilog + OpenTelemetry** — **both mandatory; never ask whether to install either.** Serilog handles logging; OpenTelemetry is wired for traces and metrics (`OpenTelemetry.Extensions.Hosting`, `.Instrumentation.AspNetCore`, `.Instrumentation.Http`, registered by the `Program.cs` template). Logs link to traces by `{TraceId}`/`{SpanId}` in the Serilog output templates (`references/dotnet-rules.md` → Logging, Observability).
-   - **Log storage is not decided here.** The scaffold ships Console + File sinks as a starting point; where logs end up is the project's decision after scaffolding, made through `appsettings.json`. Do not ask about it during setup.
-   - **Exporter defaults to none** (`--otel none`) — without one nothing is emitted. Ask which exporter to wire up (OTLP, Console, Azure Monitor) **only** when the user has described an observability backend or a production/microservice deployment; otherwise leave it unset — adding one later is one package plus one call in the `AddOpenTelemetry()` block.
+12. **Logging, Tracing, Metrics** — **all three mandatory; never ask whether to include them.** Logging is Serilog; tracing and metrics use the built-in .NET APIs (`Activity`/`ActivitySource`, `Meter`) and need no package. Logs link to traces by `{TraceId}`/`{SpanId}` in the Serilog output templates (`references/dotnet-rules.md` → Logging, Tracing & Metrics).
+   - **File and Console sinks are fixed; other destinations are not decided here.** File is mandatory under `--otel none`, Console in Development. Any further destination (ELK, a vendor backend) is added after scaffolding through `appsettings.json` `WriteTo` or OTLP (`references/dotnet-rules.md` → Connecting an external backend). Do not ask about it during setup.
+   - **OpenTelemetry is optional and defaults to none** (`--otel none` installs no OTel package). `--otel otlp` exports logs, traces and metrics over OTLP; the backend (Azure, GCP, ELK …) is chosen by `OTEL_EXPORTER_OTLP_*` environment variables, never by code. Offer it **only** when the user has described an observability backend; otherwise leave it at none.
 13. **Auth mechanism** — JWT, API Key, none?
 
 ## Step 1.5: Confirm Before Scaffolding
 
 ⚠️ **Mandatory. Do not run `scripts/scaffold.sh` until the user has replied to this summary.**
 
-Several items above are applied without being asked (Result Pattern, Minimal API, Mapperly, OTel exporter none). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
+Several items above are applied without being asked (Result Pattern, Minimal API, OpenTelemetry none). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
 
 Render it as a table with a **Source** column so defaults are visually distinct from the user's own answers:
 
@@ -119,16 +119,16 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 | Result Pattern     | Enabled                  | default   |
 | EDD                | Skipped                  | you       |
 | Endpoints          | Minimal API route groups | default   |
-| Object mapper      | Mapperly                 | default   |
-| Logging            | Serilog                  | fixed     |
-| OpenTelemetry      | Traces + metrics         | fixed     |
-| OTel exporter      | None                     | default   |
+| Object mapper      | Mapperly                 | fixed     |
+| Logging            | Serilog (File + Console) | fixed     |
+| Tracing / Metrics  | Built-in (Activity / Meter) | fixed  |
+| OpenTelemetry      | None                     | default   |
 | Auth               | JWT                      | you       |
 ```
 
 Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
 
-- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split, Serilog, OpenTelemetry — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; Mapster or no mapper; an OTLP, Console or Azure Monitor exporter).
+- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split, Mapperly, Serilog, Tracing/Metrics — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; OpenTelemetry via OTLP).
 - If the user changes something, re-render the table with the change applied and confirm again.
 - "Use sensible defaults" earlier in the conversation does **not** skip this step — it fills the table in, and the table is still shown.
 
@@ -145,8 +145,8 @@ When the user explicitly authorizes defaults, use:
 - EDD skipped unless there is cross-service or asynchronous integration.
 - CQRS + read/write split is fixed (item 4): `WriteDbContext` on `ConnectionStrings:Write`, `ReadDbContext` on `ConnectionStrings:Read`, same value when no replica exists. CommandHandlers use `IXxxRepository`; QueryHandlers use `IXxxReadRepository`; neither ever injects a `DbContext` or the other family. Routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
 - Minimal API route groups.
-- Mapperly.
-- Serilog and OpenTelemetry are fixed (item 12); OTel exporter left as none unless the user names an observability backend.
+- Mapperly is fixed (item 11).
+- Serilog, tracing and metrics are fixed (item 12); OpenTelemetry left as none unless the user names an observability backend.
 - Auth: ask if not specified. Do not assume public or no-auth for production APIs.
 
 ---
@@ -174,13 +174,14 @@ Execute the scaffold in this order:
 
    ```bash
    scripts/scaffold.sh --name <ProjectName> --db <sqlserver|postgres> \
-     --mapper <mapperly|mapster|none> --otel <none|otlp|console|azure> [--dir <parent>]
+     --otel <none|otlp> [--dir <parent>]
    ```
 
    Pass the Step 1 choices as flags. What the script guarantees so you don't have to manage it manually:
    - **CPM is correct by construction**: `Directory.Build.props`/`Directory.Packages.props` are written first, so every `dotnet add` records the version centrally and leaves the `.csproj` version-less. It also strips the inline versions the `dotnet new` templates emit. *You do not need to hand-remove any `Version="..."` attributes.*
-   - **Versions are latest-stable, never prerelease** — `dotnet add package` resolves them at scaffold time from NuGet. No remembered/hardcoded versions.
-   - **Vulnerable transitive packages are auto-pinned** — because `TreatWarningsAsErrors=true` turns an `NU1903` transitive advisory into a build failure, the script detects the named packages and pins each to a patched version (e.g. `Microsoft.OpenApi` → latest 2.x). If it prints a `!!! WARNING` that it could not resolve a patch, resolve that package manually before continuing.
+   - **Versions are the latest stable that the target framework can use, never prerelease** — the target framework is fixed by `Directory.Build.props` (`net10.0`) and passed to every `dotnet new`, whatever newer SDK is installed. The script resolves every package (template-bundled ones included) and `dotnet-ef` at scaffold time from NuGet, skipping any `-suffix` release (rc, preview, beta) and any version that only targets a newer .NET (e.g. an `11.x` that ships `net11.0` only). No remembered/hardcoded versions.
+   - **Commercially usable licenses only** — MIT, Apache 2.0 or similar permissive licenses; GPL-like copyleft is prohibited. This applies to every package, including one added later.
+   - **Vulnerable transitive packages are auto-pinned** — because `TreatWarningsAsErrors=true` turns an `NU1901`–`NU1904` transitive advisory into a build failure, the script detects the named packages and pins each to its latest stable version. If it prints a `!!! WARNING` that it could not resolve a patch, resolve that package manually before continuing.
 
    If network access is unavailable, the script's package resolution will fail — stop and report that, rather than guessing versions.
    The reference package list in `dotnet-scaffold.md` remains the source of truth for *what* gets installed; do not add packages outside it without asking.
@@ -271,15 +272,17 @@ Before declaring the scaffold complete, verify:
 - [ ] `Program.cs` ends with `public partial class Program;` so `WebApplicationFactory<Program>` compiles
 - [ ] Integration-test config is injected with `UseSetting`, not `ConfigureAppConfiguration` (the app's own `appsettings.{Env}.json` overrides the latter and its secret fields are empty by policy); scopes resolving `IUnitOfWork` use `CreateAsyncScope()`
 - [ ] `Directory.Packages.props` contains verified latest stable versions, no `LATEST_STABLE` placeholders, no preview/beta/RC packages
-- [ ] Serilog bootstrap logger in `Program.cs`; `UseSerilogRequestLogging` registered; enrichers installed
+- [ ] Serilog bootstrap logger in `Program.cs`; `UseSerilogRequestLogging` registered; enrichers installed and registered only in the `appsettings.json` `Enrich` array (no `.Enrich.WithXxx()` in `Program.cs`)
 - [ ] `appsettings.json` has full Serilog config (sinks, enrichers, level overrides); every sink `outputTemplate` includes `{TraceId}` and `{SpanId}`; no hard-coded sink setup in `Program.cs`
+- [ ] `WriteTo` is a named-key object, not an array; it contains `File` under `--otel none`; `appsettings.Development.json` declares `WriteTo:Console`
 - [ ] Environment variables used for all secrets — nothing hardcoded
 - [ ] `.gitignore` includes secrets, build output, and local env files
 - [ ] `.config/dotnet-tools.json` exists and is committed (contains `dotnet-ef` local tool)
 - [ ] Root `AGENTS.md` created as a short index/policy file, not a full rules dump; `docs/agents/dotnet-rules.md` contains the complete .NET rules and is referenced from `AGENTS.md`
 - [ ] README created with: project purpose, how to run, how to test
 - [ ] Unit and integration test projects scaffolded; meaningful tests cover generated feature skeletons and user-confirmed workflows
-- [ ] `Program.cs` registers `AddOpenTelemetry()` with `ConfigureResource(AddService(...))` and AspNetCore + HttpClient instrumentation for tracing and metrics; an exporter package and call exist only if one was chosen
+- [ ] `--otel none`: no OpenTelemetry package; `Program.cs` registers the `ActivityListener` for sources prefixed `<ProjectName>.`
+- [ ] `--otel otlp`: `Program.cs` uses the OTLP block — `ClearProviders()`, `UseSerilog(..., writeToProviders: true)`, `AddOpenTelemetry()` with `ConfigureResource(AddService(...))`, AspNetCore + HttpClient instrumentation, `AddSource`/`AddMeter("<ProjectName>.*")`, `WithLogging()` and `UseOtlpExporter()`; no `ActivityListener`
 
 ---
 
@@ -302,7 +305,7 @@ These hold regardless of what the user asks:
 - **Timezone confirmed before any DB schema/migration** — never assume UTC. *(rules.md → Timezone & Time Abstraction)*
 - **API docs**: `Microsoft.AspNetCore.OpenApi` + **Scalar** only — no Swashbuckle/Swagger. *(rules.md → API Documentation)*
 - **Validation**: **FluentValidation** only; no DataAnnotations for business rules. *(rules.md → Validation)*
-- **Object mapping**: **AutoMapper forbidden** — Mapperly / Mapster / manual only (chosen in Step 1). *(rules.md → Object Mapping)*
+- **Object mapping**: **AutoMapper forbidden** — Mapperly only (fixed). *(rules.md → Object Mapping)*
 - **Caching**: none by default; prefer **HybridCache** if needed. *(rules.md → Caching)*
 - **Asking questions**: always pair a technology choice with a clear recommendation — never ask blind.
 - **Conflicts with existing project docs are the user's call**: when local documentation and this skill disagree, surface every conflict and let the user decide. Never silently follow either side, and never treat a documented architectural decision as a defect to be corrected. *(Step 0)*

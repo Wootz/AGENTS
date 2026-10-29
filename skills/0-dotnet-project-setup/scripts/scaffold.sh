@@ -21,12 +21,11 @@
 #
 # Usage:
 #   scaffold.sh --name <ProjectName> --db <sqlserver|postgres> \
-#               [--mapper <mapperly|mapster|none>] \
-#               [--otel <none|otlp|console|azure>]   # exporter only; instrumentation is always installed \
+#               [--otel <none|otlp>]   # none = no OpenTelemetry package; otlp = logs/traces/metrics over OTLP \
 #               [--into-existing] [--dir <parent-dir>]
 #
 # Example:
-#   scaffold.sh --name Acme.OrderService --db sqlserver --mapper mapperly --otel otlp
+#   scaffold.sh --name Acme.OrderService --db sqlserver --otel otlp
 #
 # The entry-point project is always named "<Name>.Api" (this layer IS the HTTP entry point).
 #
@@ -39,7 +38,6 @@ set -euo pipefail
 # ---- defaults ----
 NAME=""
 DB=""
-MAPPER="mapperly"
 OTEL="none"
 INTO_EXISTING="false"
 PARENT_DIR="."
@@ -50,7 +48,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --name)          NAME="$2"; shift 2 ;;
     --db)            DB="$2"; shift 2 ;;
-    --mapper)        MAPPER="$2"; shift 2 ;;
     --otel)          OTEL="$2"; shift 2 ;;
     --into-existing) INTO_EXISTING="true"; shift ;;
     --dir)           PARENT_DIR="$2"; shift 2 ;;
@@ -62,8 +59,7 @@ done
 # ---- validation ----
 [[ -n "$NAME" ]] || { echo "ERROR: --name is required" >&2; exit 1; }
 case "$DB" in sqlserver|postgres) ;; *) echo "ERROR: --db must be sqlserver|postgres (got '$DB')" >&2; exit 1 ;; esac
-case "$MAPPER" in mapperly|mapster|none) ;; *) echo "ERROR: --mapper must be mapperly|mapster|none" >&2; exit 1 ;; esac
-case "$OTEL" in none|otlp|console|azure) ;; *) echo "ERROR: --otel must be none|otlp|console|azure" >&2; exit 1 ;; esac
+case "$OTEL" in none|otlp) ;; *) echo "ERROR: --otel must be none|otlp" >&2; exit 1 ;; esac
 command -v dotnet >/dev/null || { echo "ERROR: dotnet CLI not found" >&2; exit 1; }
 
 ROOT="$PARENT_DIR/$NAME"
@@ -83,7 +79,7 @@ T="tests/$NAME"      # tests path prefix
 W="$S.Api"                    # entry-point project dir
 WCS="$W/$NAME.Api.csproj"     # entry-point csproj
 
-echo ">>> Scaffolding $NAME  (db=$DB, mapper=$MAPPER, otel-exporter=$OTEL)"
+echo ">>> Scaffolding $NAME  (db=$DB, otel=$OTEL)"
 mkdir -p "$ROOT"; cd "$ROOT"
 
 # ---------------------------------------------------------------------------
@@ -109,6 +105,40 @@ cat > Directory.Packages.props <<'EOF'
 </Project>
 EOF
 
+# The target framework is fixed by Directory.Build.props; every project and
+# package version below follows it, whatever newer SDK is installed.
+TFM="$(sed -nE 's/.*<TargetFramework>(.*)<\/TargetFramework>.*/\1/p' Directory.Build.props)"
+TFM_MAJOR="${TFM#net}"; TFM_MAJOR="${TFM_MAJOR%%.*}"
+
+# 0 when a nuspec's dependency-group TFMs ($1, one per line) include one usable
+# by $TFM. No groups = framework-neutral package (e.g. a dotnet tool).
+tfm_compatible() {
+  [[ -z "$1" ]] && return 0
+  local t major
+  while IFS= read -r t; do
+    case "$t" in
+      netstandard*|.netstandard*) return 0 ;;
+      net[0-9]*.[0-9]*) major="${t#net}"; major="${major%%.*}"; (( major <= TFM_MAJOR )) && return 0 ;;
+    esac
+  done <<< "$1"
+  return 1
+}
+
+# Latest STABLE version usable by $TFM — prerelease (any "-suffix", e.g.
+# 11.0.0-rc.3) is excluded, and so is a version that only targets a newer .NET
+# (e.g. net11.0-only on a net10.0 project). NuGet may serve CRLF line endings.
+latest_stable() {
+  local pkg_lc ver tfms; pkg_lc="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  for ver in $(curl -s "https://api.nuget.org/v3-flatcontainer/$pkg_lc/index.json" 2>/dev/null \
+      | sed -E 's/.*\[//; s/\].*//' | tr ',' '\n' | tr -d '" \r\t' \
+      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -uVr || true); do
+    tfms="$(curl -s "https://api.nuget.org/v3-flatcontainer/$pkg_lc/$ver/$pkg_lc.nuspec" 2>/dev/null \
+      | grep -oE 'targetFramework="[^"]*"' | cut -d'"' -f2 | tr '[:upper:]' '[:lower:]' | sort -u || true)"
+    tfm_compatible "$tfms" && { echo "$ver"; return 0; }
+  done
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # 2. Solution + local tool manifest (dotnet-ef committed as local tool)
 # ---------------------------------------------------------------------------
@@ -119,18 +149,21 @@ dotnet new tool-manifest
 if [[ -f dotnet-tools.json && ! -f .config/dotnet-tools.json ]]; then
   mkdir -p .config && mv dotnet-tools.json .config/dotnet-tools.json
 fi
-dotnet tool install dotnet-ef
+# dotnet-ef matches the EF Core version the projects get.
+EF_VER="$(latest_stable Microsoft.EntityFrameworkCore.Design)"
+[[ -n "$EF_VER" ]] || { echo "ERROR: cannot resolve a $TFM-compatible EF Core version (network?)" >&2; exit 1; }
+dotnet tool install dotnet-ef --version "$EF_VER"
 
 # ---------------------------------------------------------------------------
 # 3. Source + test projects
 # ---------------------------------------------------------------------------
-dotnet new classlib -n "$NAME.Domain"         -o "$S.Domain"
-dotnet new classlib -n "$NAME.Application"    -o "$S.Application"
-dotnet new classlib -n "$NAME.Infrastructure" -o "$S.Infrastructure"
-dotnet new classlib -n "$NAME.Persistence"    -o "$S.Persistence"
-dotnet new webapi   -n "$NAME.Api" -o "$W"
-dotnet new xunit    -n "$NAME.UnitTests"        -o "$T.UnitTests"
-dotnet new xunit    -n "$NAME.IntegrationTests" -o "$T.IntegrationTests"
+dotnet new classlib -n "$NAME.Domain"         -o "$S.Domain"         -f "$TFM"
+dotnet new classlib -n "$NAME.Application"    -o "$S.Application"    -f "$TFM"
+dotnet new classlib -n "$NAME.Infrastructure" -o "$S.Infrastructure" -f "$TFM"
+dotnet new classlib -n "$NAME.Persistence"    -o "$S.Persistence"    -f "$TFM"
+dotnet new webapi   -n "$NAME.Api" -o "$W"                           -f "$TFM"
+dotnet new xunit    -n "$NAME.UnitTests"        -o "$T.UnitTests"        -f "$TFM"
+dotnet new xunit    -n "$NAME.IntegrationTests" -o "$T.IntegrationTests" -f "$TFM"
 
 # IntegrationTests must use the Web SDK for WebApplicationFactory
 INTEG_CSPROJ="$T.IntegrationTests/$NAME.IntegrationTests.csproj"
@@ -144,8 +177,10 @@ find tests -name "UnitTest1.cs" -delete || true
 # ---------------------------------------------------------------------------
 # CPM normalization: `dotnet new webapi`/`xunit` templates pre-add
 # <PackageReference Include="X" Version="Y" />. Under CPM the inline Version is
-# an ERROR. Move each version into Directory.Packages.props and strip it from
-# the csproj — preserving the SDK-matched stable versions the templates chose.
+# an ERROR. Move each package into Directory.Packages.props at its latest stable
+# $TFM-compatible version (the template's SDK-bundled version is usually older) and strip the
+# inline Version from the csproj. A later `dotnet add` never bumps a version
+# already in Directory.Packages.props, so this is the only place to fix it.
 # ---------------------------------------------------------------------------
 normalize_cpm() {
   local csproj="$1"
@@ -154,6 +189,8 @@ normalize_cpm() {
   | while IFS=$'\t' read -r pkg ver; do
       # Add to CPM file only if not already present
       if ! grep -q "PackageVersion Include=\"$pkg\"" Directory.Packages.props; then
+        ver="$(latest_stable "$pkg")"
+        [[ -n "$ver" ]] || { echo "ERROR: cannot resolve a $TFM-compatible stable version of $pkg (network?)" >&2; exit 1; }
         perl -0pi -e "s{(<ItemGroup>)}{\$1\n    <PackageVersion Include=\"$pkg\" Version=\"$ver\" />}" Directory.Packages.props
       fi
     done
@@ -180,9 +217,16 @@ dotnet add "$T.UnitTests/$NAME.UnitTests.csproj"          reference "$S.Applicat
 dotnet add "$T.IntegrationTests/$NAME.IntegrationTests.csproj" reference "$WCS"
 
 # ---------------------------------------------------------------------------
-# 5. Packages (versions auto-resolved to latest stable into Directory.Packages.props)
+# 5. Packages (latest stable $TFM-compatible version, recorded in Directory.Packages.props)
+#    `dotnet add` alone picks the newest stable even when it targets a newer .NET,
+#    so the version is resolved here and passed explicitly.
 # ---------------------------------------------------------------------------
-add() { local proj="$1"; local pkg="$2"; shift 2; dotnet add "$proj" package "$pkg" "$@"; }
+add() {
+  local proj="$1" pkg="$2" ver
+  ver="$(latest_stable "$pkg")"
+  [[ -n "$ver" ]] || { echo "ERROR: cannot resolve a $TFM-compatible stable version of $pkg (network?)" >&2; exit 1; }
+  dotnet add "$proj" package "$pkg" --version "$ver"
+}
 
 # CQRS core lives in Application (single Cqrs/CQRS.cs); needs DI abstractions for AddCqrs assembly scanning
 add "$S.Application/$NAME.Application.csproj" Microsoft.Extensions.DependencyInjection.Abstractions
@@ -213,22 +257,6 @@ done
 add "$WCS" Microsoft.AspNetCore.OpenApi
 add "$WCS" Scalar.AspNetCore
 
-# --- Transitive security pin: Microsoft.OpenApi ---
-# Microsoft.AspNetCore.OpenApi 10.x transitively pulls Microsoft.OpenApi 2.0.0,
-# which has a KNOWN HIGH-SEVERITY vuln (NU1903, GHSA-v5pm-xwqc-g5wc). With
-# TreatWarningsAsErrors that fails restore. The fix is subtle: DO NOT pin to the
-# absolute latest (3.x) — its API made IOpenApiMediaType.Example read-only and
-# breaks the ASP.NET Core source generator. Pin to the latest PATCHED 2.x line.
-OPENAPI_2X="$(curl -s https://api.nuget.org/v3-flatcontainer/microsoft.openapi/index.json 2>/dev/null \
-  | tr ',' '\n' | grep -oE '2\.[0-9]+\.[0-9]+' | sort -uV | tail -1 || true)"
-if [[ -n "$OPENAPI_2X" ]]; then
-  echo ">>> Pinning transitive Microsoft.OpenApi to latest patched 2.x ($OPENAPI_2X) to clear NU1903"
-  add "$WCS" Microsoft.OpenApi --version "$OPENAPI_2X"
-else
-  echo "!!! WARNING: could not resolve latest Microsoft.OpenApi 2.x. If restore fails with NU1903," >&2
-  echo "!!! manually add a patched Microsoft.OpenApi 2.x PackageVersion to Directory.Packages.props." >&2
-fi
-
 # HTTP resilience (Infrastructure owns outbound HTTP registrations)
 add "$S.Infrastructure/$NAME.Infrastructure.csproj" Microsoft.Extensions.Http.Resilience
 
@@ -248,72 +276,61 @@ esac
 add "$WCS"           "$DB_PKG"
 add "$S.Persistence/$NAME.Persistence.csproj" "$DB_PKG"
 
-# Object mapper
-case "$MAPPER" in
-  mapperly)
-    add "$S.Application/$NAME.Application.csproj" Riok.Mapperly
-    # Mapperly is a source generator: must not leak as a transitive runtime dep.
-    # No CLI flag exists — edit the PackageReference to add PrivateAssets/IncludeAssets.
-    APP_CSPROJ="$S.Application/$NAME.Application.csproj"
-    # NOTE: 'compile' MUST be in IncludeAssets — Riok.Mapperly.Abstractions ships the
-    # [Mapper] attribute as a compile-time reference. Omitting 'compile' makes the
-    # attribute non-referenceable and every mapper fails with CS0246. PrivateAssets=all
-    # still stops it leaking as a transitive runtime dependency.
-    perl -0pi -e 's{<PackageReference Include="Riok\.Mapperly"\s*/>}{<PackageReference Include="Riok.Mapperly">\n      <IncludeAssets>compile; runtime; build; native; contentfiles; analyzers</IncludeAssets>\n      <PrivateAssets>all</PrivateAssets>\n    </PackageReference>}' "$APP_CSPROJ"
-    ;;
-  mapster)
-    add "$S.Application/$NAME.Application.csproj" Mapster ;;
-  none) ;;
-esac
+# Object mapper — Mapperly, fixed
+add "$S.Application/$NAME.Application.csproj" Riok.Mapperly
+# Mapperly is a source generator: must not leak as a transitive runtime dep.
+# No CLI flag exists — edit the PackageReference to add PrivateAssets/IncludeAssets.
+APP_CSPROJ="$S.Application/$NAME.Application.csproj"
+# NOTE: 'compile' MUST be in IncludeAssets — Riok.Mapperly.Abstractions ships the
+# [Mapper] attribute as a compile-time reference. Omitting 'compile' makes the
+# attribute non-referenceable and every mapper fails with CS0246. PrivateAssets=all
+# still stops it leaking as a transitive runtime dependency.
+perl -0pi -e 's{<PackageReference Include="Riok\.Mapperly"\s*/>}{<PackageReference Include="Riok.Mapperly">\n      <IncludeAssets>compile; runtime; build; native; contentfiles; analyzers</IncludeAssets>\n      <PrivateAssets>all</PrivateAssets>\n    </PackageReference>}' "$APP_CSPROJ"
 
-# OpenTelemetry (entry-point project) — mandatory (traces + metrics). --otel picks
-# the exporter only; without one nothing is emitted.
-add "$WCS" OpenTelemetry.Extensions.Hosting
-add "$WCS" OpenTelemetry.Instrumentation.AspNetCore
-add "$WCS" OpenTelemetry.Instrumentation.Http
+# OpenTelemetry (entry-point project) — optional. none installs nothing (tracing and
+# metrics use the built-in Activity/Meter APIs); otlp exports logs/traces/metrics.
 case "$OTEL" in
-  otlp)    add "$WCS" OpenTelemetry.Exporter.OpenTelemetryProtocol ;;
-  console) add "$WCS" OpenTelemetry.Exporter.Console ;;
-  azure)   add "$WCS" Azure.Monitor.OpenTelemetry.AspNetCore ;;
-  none)    : ;;  # instrumentation only, no exporter
+  otlp)
+    for p in OpenTelemetry.Extensions.Hosting OpenTelemetry.Instrumentation.AspNetCore \
+             OpenTelemetry.Instrumentation.Http OpenTelemetry.Exporter.OpenTelemetryProtocol; do
+      add "$WCS" "$p"
+    done ;;
+  none) : ;;
 esac
 
 # ---------------------------------------------------------------------------
 # 5b. Pin vulnerable transitive packages (generic self-heal).
-#     TreatWarningsAsErrors + a transitive NU1903 fails restore. `dotnet list
-#     --vulnerable` needs a successful restore (which we don't have), so we scrape
-#     the NU1903 lines from `dotnet restore` itself and pin each named package to
-#     its latest STABLE version on the project the error names. Loop until clean
-#     or no progress. Microsoft.OpenApi is already pinned to 2.x above (its 3.x
-#     breaks the source generator) and is skipped here.
+#     TreatWarningsAsErrors + a transitive NU1901–NU1904 (low → critical) fails
+#     restore. `dotnet list --vulnerable` needs a successful restore (which we
+#     don't have), so we scrape those lines from `dotnet restore` itself and pin
+#     each named package to its latest STABLE version on the project the error names.
+#     Loop until clean or no progress.
 # ---------------------------------------------------------------------------
-latest_stable() {
-  local pkg_lc; pkg_lc="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
-  curl -s "https://api.nuget.org/v3-flatcontainer/$pkg_lc/index.json" 2>/dev/null \
-    | tr ',' '\n' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -uV | tail -1
-}
-
 pin_vulnerable_transitives() {
-  local round pinned_any restore_out line pkg ver_new proj
+  local round pinned_any restore_out line pkg ver_new proj add_out
   for round in 1 2 3; do
     restore_out="$(dotnet restore 2>&1 || true)"
-    echo "$restore_out" | grep -q 'NU1903' || { echo ">>> No vulnerable transitives remaining."; return 0; }
+    echo "$restore_out" | grep -qE 'NU190[1-4]' || { echo ">>> No vulnerable transitives remaining."; return 0; }
     pinned_any="false"
-    # Each NU1903 line names: <csproj> ... Package 'X' <ver> has a known ...
+    # Each NU190x line names: <csproj> ... Package 'X' <ver> has a known ...
     while IFS= read -r line; do
       pkg="$(echo "$line" | sed -nE "s/.*Package '([^']+)'.*/\1/p")"
       proj="$(echo "$line" | grep -oE '[^ ]+\.csproj' | head -1)"
       [[ -n "$pkg" && -n "$proj" ]] || continue
-      [[ "$pkg" == "Microsoft.OpenApi" ]] && continue   # handled by explicit 2.x pin
       grep -q "PackageReference Include=\"$pkg\"" "$proj" 2>/dev/null && continue  # already pinned
       ver_new="$(latest_stable "$pkg")"
       [[ -n "$ver_new" ]] || { echo "!!! WARNING: cannot resolve patched version for $pkg" >&2; continue; }
       echo ">>> Pinning vulnerable transitive $pkg -> $ver_new in $(basename "$proj")"
-      dotnet add "$proj" package "$pkg" --version "$ver_new" >/dev/null 2>&1 && pinned_any="true"
-    done < <(echo "$restore_out" | grep 'NU1903')
-    [[ "$pinned_any" == "true" ]] || { echo "!!! WARNING: NU1903 remains but nothing new to pin — resolve manually." >&2; return 1; }
+      if add_out="$(dotnet add "$proj" package "$pkg" --version "$ver_new" 2>&1)"; then
+        pinned_any="true"
+      else
+        echo "!!! WARNING: pinning $pkg $ver_new failed:" >&2
+        echo "$add_out" | grep -iE 'error' >&2 || true
+      fi
+    done < <(echo "$restore_out" | grep -E 'NU190[1-4]' | sort -u)
+    [[ "$pinned_any" == "true" ]] || { echo "!!! WARNING: vulnerable transitives remain but nothing new to pin — resolve manually." >&2; return 1; }
   done
-  echo "!!! WARNING: still seeing NU1903 after 3 rounds — resolve manually." >&2; return 1
+  echo "!!! WARNING: still seeing vulnerable transitives after 3 rounds — resolve manually." >&2; return 1
 }
 pin_vulnerable_transitives || true
 
@@ -326,7 +343,8 @@ cat <<EOF
 >>> Directory.Packages.props now holds resolved latest-stable versions.
 
 NEXT (done by the skill, not this script — they are context-dependent):
-  - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenTelemetry, OpenAPI+Scalar, etc.)
+  - Overwrite $W/Program.cs from dotnet-scaffold.md (Serilog bootstrap, OpenAPI+Scalar, etc.);
+    --otel $OTEL: apply the OpenTelemetry (--otel otlp) block only for otlp; replace <ProjectName> -> $NAME
   - Copy CQRS core from dotnet-cqrs-template.cs into $S.Application/Cqrs/CQRS.cs (namespace $NAME.Application.Cqrs; replace YourProject -> $NAME)
   - Scaffold domain building blocks from dotnet-domain-template.cs per chosen model style
   - Write appsettings.json / appsettings.Development.json (ConnectionStrings:Write + :Read, same value without a replica)
