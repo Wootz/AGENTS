@@ -92,33 +92,22 @@
   ```
   - **Bootstrap logger**: `Program.cs` must configure a bootstrap `Log.Logger` before `WebApplication.CreateBuilder()` to capture startup errors. Wrap the entire host startup in `try/catch/finally` with `Log.CloseAndFlush()` in the `finally` block.
   - **Request logging**: Always call `app.UseSerilogRequestLogging(...)` with a custom `MessageTemplate` that includes `{RequestMethod}`, `{RequestPath}`, `{StatusCode}`, and `{Elapsed}`. This replaces the verbose default ASP.NET Core request logging with a single structured entry per request.
-  - **Enrichers** (mandatory, add to Api project): `Serilog.Enrichers.Environment` (`WithMachineName`), `Serilog.Enrichers.Process` (`WithProcessId`), `Serilog.Enrichers.Thread` (`WithThreadId`). Register via `.Enrich.WithMachineName().Enrich.WithProcessId().Enrich.WithThreadId()`.
+  - **Enrichers** (mandatory, add to Api project): `Serilog.Enrichers.Environment` (`WithMachineName`), `Serilog.Enrichers.Process` (`WithProcessId`), `Serilog.Enrichers.Thread` (`WithThreadId`). Register them only in the `appsettings.json` `"Enrich"` array (`FromLogContext`, `WithMachineName`, `WithProcessId`, `WithThreadId`) — never also via `.Enrich.WithXxx()` in `Program.cs`.
   - **Configuration**: Serilog must be fully configured via `appsettings.json` using `ReadFrom.Configuration()`. Hard-coded sink configuration in `Program.cs` is forbidden. Use `ReadFrom.Services()` to allow DI-resolved sinks.
-  - **Trace correlation**: Every sink `outputTemplate` must include `{TraceId}` and `{SpanId}`. Serilog captures them from `Activity.Current`, so each log line can be matched to its OpenTelemetry trace.
+  - **Sinks**:
+    - **File** is mandatory under `--otel none`. Under `--otel otlp` it ships too, but may be disabled by commenting out or deleting its `WriteTo` entry — the .NET JSON configuration provider accepts `//` and `/* */` comments. Delete instead of commenting when a strict JSON tool (`jq`, a CI/CD config-substitution step) processes the file.
+    - **Console** is mandatory in Development: `appsettings.Development.json` declares its own `WriteTo:Console`, so editing the base file never removes it.
+    - **`WriteTo` is a named-key object, never an array.** Environment files and environment variables merge by key (`Serilog__WriteTo__File__Args__path`), not by array index, and adding a sink is adding a key.
+    - In production, point the File `path` at persistent storage through `Serilog__WriteTo__File__Args__path` — a container's local disk is lost on restart, and each instance writes its own file.
+  - **Trace correlation**: Every sink `outputTemplate` must include `{TraceId}` and `{SpanId}`. Serilog captures them from `Activity.Current` (W3C trace context), so each log line can be matched to its trace — the OpenTelemetry trace when OTel is enabled.
   - **Log levels**: Production default is `Information`; override `Microsoft.*` and `System.*` to `Warning`; Development overrides to `Debug`. EF Core SQL commands: `Microsoft.EntityFrameworkCore.Database.Command` → `Information` in Development only.
   - **Sensitive data**: Never log passwords, tokens, PII, or connection strings. Destructure objects explicitly; do not log entire request/response bodies unless redacted.
-- 📊 **Observability (OpenTelemetry)**: Mandatory in every project — never ask whether to install it.
-  - **Scope**: The scaffold wires OpenTelemetry for **traces and metrics**; logs and traces are linked by the `{TraceId}`/`{SpanId}` in the Serilog output templates. Where logs are stored (file, console, OTLP, a vendor backend) is a per-project decision made after scaffolding — the Console + File sinks are only the starting point, changed through `appsettings.json` `WriteTo`.
-  - Install `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http` in the `Api` project.
-  - **Exporter** defaults to none — without one nothing is emitted. Add exactly one only when an observability backend is known: **OTLP** (Jaeger/Zipkin/Collector), **Console** (dev/debug), or **Azure Monitor**.
-  - Register in `Program.cs`:
+- 📊 **Tracing & Metrics**: Mandatory in every project, with or without OpenTelemetry — never ask whether to include them. Both use the built-in .NET APIs (`System.Diagnostics.Activity` / `ActivitySource`, `System.Diagnostics.Metrics.Meter`); no package is needed.
+  - **Naming**: every custom `ActivitySource` and `Meter` name starts with `<ProjectName>.` (e.g. `Acme.OrderService.OrderSync`). The `none` listener and the OTel `AddSource`/`AddMeter("<ProjectName>.*")` registrations both rely on this prefix, so a new source or meter needs no `Program.cs` change.
+  - **Tracing**: ASP.NET Core starts an `Activity` per HTTP request and propagates it downstream through the W3C `traceparent` header. Under `--otel none` traces are used for log correlation only (no trace view) — `Program.cs` registers an `ActivityListener` for the `<ProjectName>.` sources so `StartActivity()` returns an activity instead of `null`.
+  - **Metrics**: ASP.NET Core, Kestrel, HttpClient and the runtime publish meters out of the box. Create custom meters through the injected `IMeterFactory`, never `new Meter(...)`. Under `--otel none` they are observed with `dotnet-counters` / `dotnet-monitor`.
+  - **Background work must start its own `Activity`**: `BackgroundService`, scheduled jobs, and message consumers get no request `Activity`, so their logs carry an empty `TraceId`. Start one `Activity` per unit of work (one loop iteration, one message) from an `ActivitySource` named under the `<ProjectName>.` prefix.
   ```csharp
-  builder.Services.AddOpenTelemetry()
-      .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
-      .WithTracing(tracing => tracing
-          .AddAspNetCoreInstrumentation()
-          .AddHttpClientInstrumentation())
-      .WithMetrics(metrics => metrics
-          .AddAspNetCoreInstrumentation()
-          .AddHttpClientInstrumentation());
-      // Exporter — chain exactly one, only when chosen:
-      //   OTLP          → .UseOtlpExporter()   (endpoint from OTEL_EXPORTER_OTLP_ENDPOINT)
-      //   Console       → .AddConsoleExporter() inside both WithTracing and WithMetrics
-      //   Azure Monitor → .UseAzureMonitor()   (from APPLICATIONINSIGHTS_CONNECTION_STRING)
-  ```
-  - **Background work must start its own `Activity`**: HTTP requests get one automatically from the AspNetCore instrumentation; `BackgroundService`, scheduled jobs, and message consumers do not, so their logs carry an empty `TraceId`. Start one `Activity` per unit of work (one loop iteration, one message) from an `ActivitySource`, and register that source with `.AddSource(...)` in `WithTracing` — an unregistered source makes `StartActivity()` return `null`.
-  ```csharp
-  // Program.cs: .WithTracing(tracing => tracing.AddSource(OrderSyncWorker.ActivitySourceName) ...)
   internal sealed class OrderSyncWorker(ILogger<OrderSyncWorker> logger) : BackgroundService
   {
       public const string ActivitySourceName = "Acme.OrderService.OrderSync";
@@ -138,6 +127,40 @@
       }
   }
   ```
+- 🔭 **OpenTelemetry (optional, `--otel otlp`)**: Defaults to none — `--otel none` installs no OTel package. Enable it only when the project ships telemetry to an observability backend.
+  - Install `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http`, `OpenTelemetry.Exporter.OpenTelemetryProtocol` in the `Api` project.
+  - OTLP is the only exporter: logs, traces and metrics all leave through `UseOtlpExporter()`. Serilog stays the only logging entry point — `writeToProviders: true` forwards its events to the OTel logger provider, and `ClearProviders()` stops the default Console provider from printing every line twice. Console and File remain Serilog sinks.
+  - Remove the `none`-mode `ActivityListener` when OTel is added: sampling takes the most permissive listener, so it would override the OTel sampler.
+  - Register in `Program.cs`:
+  ```csharp
+  builder.Logging.ClearProviders();
+  builder.Host.UseSerilog((ctx, services, lc) => lc
+      .ReadFrom.Configuration(ctx.Configuration)
+      .ReadFrom.Services(services),
+      writeToProviders: true);
+
+  builder.Services.AddOpenTelemetry()
+      .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
+      .WithTracing(tracing => tracing
+          .AddSource("<ProjectName>.*")
+          .AddAspNetCoreInstrumentation()
+          .AddHttpClientInstrumentation())
+      .WithMetrics(metrics => metrics
+          .AddMeter("<ProjectName>.*")
+          .AddAspNetCoreInstrumentation()
+          .AddHttpClientInstrumentation())
+      .WithLogging()
+      .UseOtlpExporter();
+  ```
+- 🔌 **Connecting an external backend**: Business code only ever uses `ILogger<T>`, `ActivitySource` and `Meter`; switching backends changes configuration, never business code. Two outlets, usable together:
+
+  | Outlet | How to add a destination | Carries |
+  |---|---|---|
+  | Serilog sink | Add the sink package, then a named key under `appsettings.json` `WriteTo` | Logs |
+  | OTLP (`--otel otlp`) | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` environment variables; backends without native OTLP intake go through an OpenTelemetry Collector | Logs, traces, metrics |
+
+  - A sink must be maintained by the vendor or the Serilog organization, and licensed MIT or Apache 2.0.
+  - Example — ELK: OTLP to Elastic's OTLP intake, `Elastic.Serilog.Sinks` straight to Elasticsearch, or File/Console collected by Filebeat/Logstash.
 - 🔗 **HTTP Client & Resilience**: Any outbound HTTP call to an external Web API **must** use a named/typed `HttpClient` registered via `AddHttpClient(...)` with **`Microsoft.Extensions.Http.Resilience`**. Call `.AddStandardResilienceHandler()` on every registration — this enables the built-in defense pipeline: Rate Limiting → Timeout → Retry → Circuit Breaker. Raw `HttpClient` instantiation (`new HttpClient()`) is strictly prohibited.
   ```csharp
   services.AddHttpClient("PaymentClient", c => c.BaseAddress = new Uri(config["Payment:BaseUrl"]!))
@@ -150,10 +173,7 @@
 - 📡 **API Documentation**: Use `Microsoft.AspNetCore.OpenApi` (`AddOpenApi()`) with **Scalar** (`Scalar.AspNetCore`) for API documentation UI. Do NOT use Swashbuckle or Swagger UI under any circumstance.
 - 📋 **Validation**: Use **FluentValidation** for all request/command/query validation. Validators live in `Application/Validators/`. Package split: `FluentValidation` is referenced by the `Application` project; `FluentValidation.DependencyInjectionExtensions` is referenced by `Api` and registered via `AddValidatorsFromAssembly(typeof(SomeValidator).Assembly)`. At the endpoint layer, invoke validation using `await validator.ValidateAndThrowAsync(request, ct)` before dispatching commands/queries. Never use DataAnnotations for business rule validation — DataAnnotations are permitted only for OpenAPI metadata hints.
 - 🗃️ **Caching**: Do not scaffold caching by default. If the project has a confirmed caching need, prefer **`HybridCache`** and avoid direct `IDistributedCache` / `IMemoryCache` usage in application code. `HybridCache` requires the **`Microsoft.Extensions.Caching.Hybrid`** package (it is *not* built into the shared framework) — add it and call `builder.Services.AddHybridCache()` only when caching is actually needed.
-- 🗺️ **Object Mapping**: **AutoMapper is strictly prohibited — no exceptions.** Mapper classes live in `Application/Mappers/`. Choose one of the following during project setup (ask the user and provide a recommendation):
-  - **Mapperly** (`Riok.Mapperly`) — Source generator; zero runtime overhead, compile-time type safety, ideal for performance-sensitive projects. **Recommended for most projects.** Add to `Application.csproj` with `<PrivateAssets>all</PrivateAssets>` to prevent the analyzer from leaking as a transitive runtime dependency.
-  - **Mapster** — Runtime mapper; more flexible for dynamic/complex mapping scenarios, richer configuration API.
-  - **None** — Acceptable for simple projects or where explicit manual mapping improves readability and traceability.
+- 🗺️ **Object Mapping**: **AutoMapper is strictly prohibited — no exceptions.** Always use **Mapperly** (`Riok.Mapperly`) — fixed in every project; never ask, never offer an alternative. Source generator; zero runtime overhead, compile-time type safety. Mapper classes live in `Application/Mappers/`. Add to `Application.csproj` with `<PrivateAssets>all</PrivateAssets>` to prevent the analyzer from leaking as a transitive runtime dependency.
 
 ## 🧪 Testing Guidelines
 - 🧪 **Required Test Projects**: Every scaffolded solution must include exactly these baseline test projects:
