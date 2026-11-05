@@ -381,25 +381,24 @@
       "skillFolderHash": "ad2925850efb8973a72d2e666f7a975f9a2d4a9b",
       "installedAt": "2026-08-13T08:39:03.044Z",
       "updatedAt": "2026-09-07T07:52:17.453Z"
+    },
+    "design-taste-frontend": {
+      "source": "Leonxlnx/taste-skill",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/Leonxlnx/taste-skill.git",
+      "skillPath": "skills/taste-skill/SKILL.md",
+      "skillFolderHash": "5743b6eb4d005c5bbe51aa4ecae701eb052d6198",
+      "pluginName": "taste-skill",
+      "installedAt": "2026-11-05T01:30:31.596Z",
+      "updatedAt": "2026-11-05T01:30:31.596Z"
     }
   },
   "dismissed": {
     "findSkillsPrompt": true
   },
   "lastSelectedAgents": [
-    "amp",
-    "antigravity",
     "antigravity-cli",
-    "cline",
     "codex",
-    "cursor",
-    "deepagents",
-    "gemini-cli",
-    "github-copilot",
-    "kimi-code-cli",
-    "opencode",
-    "warp",
-    "zed",
     "claude-code"
   ]
 }
