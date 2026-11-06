@@ -1,36 +1,38 @@
 ---
 name: 0-spa-backend-single-site
-description: 將獨立的前端 SPA（Vue/React/Vite）與 ASP.NET Core 後端整合成單一站台部署，讓 dotnet publish 自動建置前端並收進 wwwroot。當使用者提到「前後端整合」「只想部署一個站台」「合併成單一站台」「前端放進 wwwroot」「不想分開部署前後端」「單一 App Service」，或詢問如何讓後端同時提供 API 與前端靜態檔時，務必使用此技能。即使使用者只說「整合前端」或「一個站台就好」而未細講技術細節，也應該觸發。
+description: Merge a standalone frontend SPA (Vue/React/Vite) and an ASP.NET Core backend into a single-site deployment, so dotnet publish builds the frontend into wwwroot automatically. Use it whenever the user mentions integrating frontend and backend, deploying only one site, merging into a single site, putting the frontend into wwwroot, not deploying them separately, a single App Service (「前後端整合」「只想部署一個站台」「合併成單一站台」「前端放進 wwwroot」「整合前端」「一個站台就好」), or asks how the backend can serve both the API and the frontend static files.
 ---
 
-# 前後端整合為單一站台
+# Merge Frontend and Backend into a Single Site
 
-把原本分開跑的 SPA（Vite dev server）與 ASP.NET Core API 合併成一個站台：後端同時提供 API 與前端靜態檔，部署時只需要一個 App Service / 容器。
+Combine an SPA (Vite dev server) and an ASP.NET Core API that used to run separately into one site: the backend serves both the API and the frontend static files, so deployment needs only one App Service / container.
 
-## 為什麼這件事容易做壞
+Comments and messages in the code this skill adds to the project are in Traditional Chinese (正體中文), as in the snippets below.
 
-整合看起來只是「把 dist 複製到 wwwroot」，但實際上有四個地方會在部署後才爆炸，而且本機開發模式完全看不出來。先掃描這四項，再動手改。
+## Why this is easy to get wrong
 
-## 步驟一：先偵查，別急著改
+Integration looks like "copy dist into wwwroot", but four things blow up only after deployment, and local development hides all of them. Scan for these four before changing anything.
 
-整合前務必確認以下幾點，它們決定了要改哪些檔案：
+## Step 1: Inspect before changing
+
+Confirm the following before integrating; they decide which files change:
 
 ```bash
-# 前端硬編碼的後端位址（最常見的地雷）
+# Backend addresses hard-coded in the frontend (the most common trap)
 grep -rn "localhost:[0-9]\+\|ws://\|wss://\|baseURL\|VITE_" frontend/src/
 
-# 路由模式：createWebHistory 需要 SPA fallback，createWebHashHistory 不用
+# Router mode: createWebHistory needs an SPA fallback, createWebHashHistory does not
 grep -rn "createWebHistory\|createWebHashHistory\|BrowserRouter\|HashRouter" frontend/src/
 
-# 後端是否已有佔用根路徑的端點
+# Whether the backend already has an endpoint on the root path
 grep -n 'MapGet("/"' backend/**/Program.cs
 ```
 
-同時讀 `vite.config.ts`（看既有 proxy 設定）與 `Program.cs`（看中介軟體順序）。
+Also read `vite.config.ts` (existing proxy settings) and `Program.cs` (middleware order).
 
-## 步驟二：修正前端的同源連線
+## Step 2: Make frontend connections same-origin
 
-**WebSocket 是最常被漏掉的一項。** API 呼叫通常已經走相對路徑（靠 Vite proxy），但 WebSocket 常被硬編碼成 `ws://localhost:5082`。整合後前後端同源，必須改用 `window.location.host`：
+**WebSocket is the item most often missed.** API calls usually already use relative paths (via the Vite proxy), but WebSocket is often hard-coded as `ws://localhost:5082`. After integration frontend and backend share an origin, so use `window.location.host`:
 
 ```ts
 const wsUrl = computed(() => {
@@ -41,7 +43,7 @@ const wsUrl = computed(() => {
 })
 ```
 
-改成同源後，開發模式（Vite :5173）就需要 proxy 才能連到後端，所以 `vite.config.ts` 要補上 `/ws`（`ws: true` 是必要的，否則不會升級成 WebSocket 連線）：
+Once same-origin, development mode (Vite :5173) needs a proxy to reach the backend, so add `/ws` to `vite.config.ts` (`ws: true` is required, or the connection is never upgraded to WebSocket):
 
 ```ts
 server: {
@@ -53,11 +55,11 @@ server: {
 }
 ```
 
-## 步驟三：後端提供靜態檔與 SPA fallback
+## Step 3: Serve static files and an SPA fallback from the backend
 
-在 `Program.cs` 加入三段，順序很重要。
+Add three parts to `Program.cs`; order matters.
 
-**靜態檔服務**要排在 API 端點之前：
+**Static file serving** goes before the API endpoints:
 
 ```csharp
 // 前後端整合為單一站台後，以 HTTP 對外提供服務；啟用 HTTPS 重導向會讓沒有憑證的
@@ -71,9 +73,9 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 ```
 
-`UseHttpsRedirection` 這段常被忽略：本機有 dev 憑證所以沒事，但部署到沒有憑證的環境時會讓前端整個載不進來。改成可設定的開關比較安全。
+The `UseHttpsRedirection` part is often overlooked: locally the dev certificate hides the problem, but in a deployment without a certificate the frontend fails to load entirely. A configurable switch is safer.
 
-**移除佔用根路徑的端點。** 很多專案有 `app.MapGet("/", () => "API is running!")`，它會蓋掉 `index.html`。把存活檢查搬到 `/api/system/health`：
+**Remove any endpoint on the root path.** Many projects have `app.MapGet("/", () => "API is running!")`, which shadows `index.html`. Move the liveness check to `/api/system/health`:
 
 ```csharp
 // 根路徑改由 UseDefaultFiles/UseStaticFiles 提供前端 index.html；
@@ -81,7 +83,7 @@ app.UseStaticFiles();
 app.MapGet("/api/system/health", () => Results.Ok(new { status = "ok" }));
 ```
 
-**SPA fallback 放在所有端點之後**。前端用 history 模式時，直接重整 `/projects/1` 這類深層路由會 404，因為伺服器上沒有那個檔案：
+**The SPA fallback goes after all endpoints.** With history-mode routing, reloading a deep route like `/projects/1` returns 404 because no such file exists on the server:
 
 ```csharp
 // SPA fallback：前端使用 createWebHistory()，直接重整 /projects/1 這類深層路由時
@@ -109,11 +111,11 @@ app.MapFallback((HttpContext context) =>
 });
 ```
 
-排除 `/api` 這點很關鍵：少了它，打錯的 API 網址會回傳 HTML 而不是 404，前端拿到一坨 HTML 去 parse JSON 會噴出很難追的錯誤。`WebRootPath` 的 null 檢查也不是多餘的——`wwwroot` 不存在時它會是 null，直接 `Path.Combine` 會拋例外。
+Excluding `/api` is essential: without it, a mistyped API URL returns HTML instead of 404, and the frontend fails parsing that HTML as JSON with an error that is hard to trace. The `WebRootPath` null check is not redundant either — it is null when `wwwroot` does not exist, and `Path.Combine` would throw.
 
-## 步驟四：publish 時自動建置前端
+## Step 4: Build the frontend automatically on publish
 
-在 WebApi 的 `.csproj` 加入 MSBuild Target，讓 `dotnet publish` 一次完成前後端建置。掛在 `PrepareForPublish` 而非 `Build`，這樣日常 `dotnet build` 與跑測試都不會被前端建置拖慢：
+Add MSBuild targets to the WebApi `.csproj` so `dotnet publish` builds frontend and backend in one go. Hook into `PrepareForPublish` rather than `Build`, so everyday `dotnet build` and test runs are not slowed by the frontend build:
 
 ```xml
 <PropertyGroup>
@@ -150,13 +152,13 @@ app.MapFallback((HttpContext context) =>
 </Target>
 ```
 
-動態 ItemGroup 那點是實作上的硬性限制：MSBuild 在評估階段就展開靜態 ItemGroup，那時 `dist/` 還不存在，所以檔案清單會是空的。放進 Target 內才會在執行時才展開。
+The dynamic ItemGroup is a hard constraint: MSBuild expands static ItemGroups at evaluation time, when `dist/` does not exist yet, so the file list would be empty. Inside a Target it expands at execution time.
 
-若專案用 npm/yarn 而非 pnpm，替換 `PnpmCommand` 即可；套件管理器應該跟著專案既有慣例走，不要擅自更換。
+If the project uses npm/yarn instead of pnpm, replace `PnpmCommand`; the package manager follows the project's existing convention and is never switched unasked.
 
-## 步驟五：排除不該進 publish 的本機檔案
+## Step 5: Keep local-only files out of publish
 
-預設情況下，本機 SQLite 資料庫與開發用設定檔會被一起打包，部署時覆蓋線上資料或洩漏金鑰：
+By default the local SQLite database and development settings are packaged too, overwriting live data or leaking keys on deployment:
 
 ```xml
 <ItemGroup>
@@ -166,34 +168,34 @@ app.MapFallback((HttpContext context) =>
 </ItemGroup>
 ```
 
-`appsettings.Development.json` 要不要排除，取決於使用者打算怎麼設定線上環境——這會影響部署後 AI 金鑰等設定能否讀到，**應該問使用者**，不要自己決定：
+Whether to exclude `appsettings.Development.json` depends on how the user plans to configure the live environment — it decides whether settings such as AI keys are readable after deployment, so **ask the user** rather than deciding:
 
-- **排除**：線上改用環境變數（`AI__ApiKey` 這種雙底線寫法）。金鑰不進部署包，較安全。
-- **不排除**：線上設 `ASPNETCORE_ENVIRONMENT=Development` 直接沿用該檔。方便，但金鑰會進部署包，且該環境下的偵錯端點、測試後門也會一併生效。
+- **Exclude**: configure the live site with environment variables (double-underscore form like `AI__ApiKey`). Keys stay out of the package; safer.
+- **Keep**: set `ASPNETCORE_ENVIRONMENT=Development` live and reuse the file. Convenient, but keys enter the package, and that environment's debug endpoints and test backdoors become active too.
 
-若該檔含有測試用的驗證繞過開關（如 `Testing:EnableTestUserHeader`），選「不排除」時要提醒使用者：那個後門會在公開網址上生效。
+If the file contains a test authentication bypass switch (e.g. `Testing:EnableTestUserHeader`) and the user chooses "keep", warn them that the backdoor will be live on the public URL.
 
-## 步驟六：驗證
+## Step 6: Verify
 
-整合的問題幾乎都只在建置後才浮現，所以一定要實際 publish 並啟動來測，不能只看程式碼：
+Integration problems almost always surface only after a build, so actually publish and start it; reading the code is not enough:
 
 ```bash
-dotnet publish <WebApi 專案路徑> -c Release -o /tmp/publish-test
-cd /tmp/publish-test && ASPNETCORE_URLS=http://localhost:5299 ./<專案名稱>
+dotnet publish <WebApi project path> -c Release -o /tmp/publish-test
+cd /tmp/publish-test && ASPNETCORE_URLS=http://localhost:5299 ./<project name>
 ```
 
-逐項確認（用一個沒被佔用的埠，避免與開發中的後端相撞）：
+Check each item (on a free port, so it does not collide with a running dev backend):
 
-| 路徑 | 預期 |
+| Path | Expected |
 |---|---|
 | `/` | 200 text/html |
-| 深層路由如 `/projects/1` | 200 text/html（fallback 生效） |
-| `/api/<真實端點>` | 200 application/json |
-| `/api/nonexistent` | 404，**不是** HTML |
+| Deep route such as `/projects/1` | 200 text/html (fallback works) |
+| `/api/<real endpoint>` | 200 application/json |
+| `/api/nonexistent` | 404, **not** HTML |
 | `/assets/*.js` | 200 text/javascript |
-| WebSocket 端點 | 連線成功 |
+| WebSocket endpoint | Connects |
 
-WebSocket 可以用 node 快速驗證：
+WebSocket can be checked quickly with node:
 
 ```bash
 node -e "const WebSocket=require('ws');const ws=new WebSocket('ws://localhost:5299/ws');
@@ -201,10 +203,10 @@ ws.on('open',()=>{console.log('WS OK');process.exit(0)});
 ws.on('error',e=>{console.log('WS FAIL:',e.message);process.exit(1)});"
 ```
 
-最後跑一次既有測試，確認移除根路徑端點沒有打破什麼。
+Finally run the existing tests to confirm removing the root endpoint broke nothing.
 
-## 收尾
+## Wrap-up
 
-把建置產物加進 `.gitignore`（`publish` 輸出目錄、以及若有把前端建到專案 `wwwroot` 的話那個目錄）。
+Add build output to `.gitignore` (the `publish` output directory, and the project's `wwwroot` if the frontend is built there).
 
-告訴使用者部署與開發各自怎麼跑：部署是單一 `dotnet publish`；開發仍維持前端 dev server + 後端分開跑，保有 HMR。
+Tell the user how deployment and development each run: deployment is a single `dotnet publish`; development keeps the frontend dev server and backend running separately, with HMR.

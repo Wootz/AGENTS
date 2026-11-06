@@ -214,8 +214,8 @@ def nuget_meta(pkg: str) -> dict | None:
                 "listed": listed,
                 "license": expr,
                 "license_url": url if (guessed or not expr) else None,
-                "deprecated": None if not dep else ", ".join(dep.get("reasons", [])) + (
-                    f" (alternative: {dep['alternatePackage'].get('id')})" if dep.get("alternatePackage") else ""),
+                "deprecated": None if not dep else "、".join(dep.get("reasons", [])) + (
+                    f"（替代：{dep['alternatePackage'].get('id')}）" if dep.get("alternatePackage") else ""),
                 "tfms": [g.get("targetFramework", "") for g in ce.get("dependencyGroups", [])],
             }
     return {"versions": versions}
@@ -313,14 +313,14 @@ def collect_dotnet(root: Path, items: dict, errors: list, tfms: set):
         rel = str(t.relative_to(root))
         r = subprocess.run(["dotnet", "restore", str(t)], capture_output=True, text=True)
         if r.returncode != 0:
-            errors.append(f"`dotnet restore {rel}` failed: {(r.stdout + r.stderr).strip()[-400:]}")
+            errors.append(f"`dotnet restore {rel}` 失敗：{(r.stdout + r.stderr).strip()[-400:]}")
             continue
         r = subprocess.run(["dotnet", "list", str(t), "package", "--include-transitive", "--format", "json"],
                            capture_output=True, text=True)
         try:
             data = json.loads(r.stdout)
         except json.JSONDecodeError:
-            errors.append(f"`dotnet list {rel} package` output could not be parsed: {(r.stdout + r.stderr).strip()[-400:]}")
+            errors.append(f"`dotnet list {rel} package` 無法解析：{(r.stdout + r.stderr).strip()[-400:]}")
             continue
         for proj in data.get("projects", []):
             pname = Path(proj.get("path", rel)).stem
@@ -348,7 +348,7 @@ def collect_pnpm(lock: Path, root: Path, items: dict, errors: list):
     text = lock.read_text(encoding="utf-8")
     m = re.search(r"^lockfileVersion:\s*'?([\d.]+)", text, re.M)
     if not m or float(m.group(1)) < 6:
-        errors.append(f"{lock.relative_to(root)}: unsupported lockfileVersion {m.group(1) if m else '?'} (needs 6+)")
+        errors.append(f"{lock.relative_to(root)}：不支援 lockfileVersion {m.group(1) if m else '?'}（需 6 以上）")
         return
     section, importer, deptype, pkg = None, None, None, None
     direct: dict[str, tuple[str, bool]] = {}
@@ -379,7 +379,7 @@ def collect_pnpm(lock: Path, root: Path, items: dict, errors: list):
             if not name:
                 continue
             if not re.match(r"^\d+\.\d+\.\d+", ver):
-                errors.append(f"{where}: {name}@{ver} is not from a registry; review manually")
+                errors.append(f"{where}：{name}@{ver} 非 registry 來源，請人工確認")
                 continue
             if f"{name}@{norm(ver)}" not in direct:
                 add_item(items, "npm", name, ver, False, False, where)
@@ -395,7 +395,7 @@ def collect_npm(lock: Path, root: Path, items: dict, errors: list):
     data = json.loads(lock.read_text(encoding="utf-8"))
     pkgs = data.get("packages")
     if not pkgs:
-        errors.append(f"{lock.relative_to(root)}: unsupported lockfileVersion {data.get('lockfileVersion')} (needs 2+)")
+        errors.append(f"{lock.relative_to(root)}：不支援 lockfileVersion {data.get('lockfileVersion')}（需 2 以上）")
         return
     rootpkg = pkgs.get("", {})
     devs = set(rootpkg.get("devDependencies", {}))
@@ -425,17 +425,17 @@ def framework_findings(root: Path, tfms: set, has_js: bool, findings: list):
         for t in sorted(tfms):
             r = rels.get(t, {})
             if r.get("support-phase") == "eol":
-                res = "❌ EOL"
-                findings.append(("❌", "framework", f".NET {t}", "", "End of life: no more security updates"))
+                res = "❌ 已停止支援"
+                findings.append(("❌", "框架", f".NET {t}", "", "已停止支援（EOL），不再有安全性更新"))
             elif r.get("release-type") == "sts":
-                res = "⚠️ not LTS"
-                findings.append(("⚠️", "framework", f".NET {t}", "", f"STS release; latest LTS is .NET {latest}"))
+                res = "⚠️ 非 LTS"
+                findings.append(("⚠️", "框架", f".NET {t}", "", f"STS 版本；最新 LTS 為 .NET {latest}"))
             elif latest and t < latest:
-                res = "ℹ️ not latest LTS"
-                findings.append(("ℹ️", "framework", f".NET {t}", "", f"Latest LTS is .NET {latest} (existing projects are not upgraded unasked)"))
+                res = "ℹ️ 非最新 LTS"
+                findings.append(("ℹ️", "框架", f".NET {t}", "", f"最新 LTS 為 .NET {latest}（既有專案不主動升級）"))
             else:
                 res = "✅"
-            rows.append((f".NET (net{t}.0)", str(t), str(latest or "?"), res))
+            rows.append((f".NET（net{t}.0）", str(t), str(latest or "?"), res))
     if has_js:
         dist = get_json("https://nodejs.org/dist/index.json") or []
         lts_majors = [int(d["version"].lstrip("v").split(".")[0]) for d in dist if d.get("lts")]
@@ -451,19 +451,19 @@ def framework_findings(root: Path, tfms: set, has_js: bool, findings: list):
             if pj:
                 spec = (json.loads(pj.read_text(encoding="utf-8")).get("engines") or {}).get("node")
         if not spec:
-            res = "ℹ️ unspecified"
-            findings.append(("ℹ️", "framework", "Node.js", "", f"No version set in .nvmrc / .node-version / engines.node; latest LTS is {latest}"))
+            res = "ℹ️ 未指定"
+            findings.append(("ℹ️", "框架", "Node.js", "", f"未以 .nvmrc / .node-version / engines.node 指定版本；最新 LTS 為 {latest}"))
         elif spec.startswith("lts/"):
             res = "✅"
         else:
             mm = re.search(r"\d+", spec)
             cur = int(mm.group(0)) if mm else None
             if cur and latest and cur < latest:
-                res = "ℹ️ not latest LTS"
-                findings.append(("ℹ️", "framework", "Node.js", spec, f"Latest LTS is {latest} (existing projects are not upgraded unasked)"))
+                res = "ℹ️ 非最新 LTS"
+                findings.append(("ℹ️", "框架", "Node.js", spec, f"最新 LTS 為 {latest}（既有專案不主動升級）"))
             elif cur and cur % 2 == 1:
-                res = "⚠️ not LTS"
-                findings.append(("⚠️", "framework", "Node.js", spec, f"Odd-numbered releases are not LTS; latest LTS is {latest}"))
+                res = "⚠️ 非 LTS"
+                findings.append(("⚠️", "框架", "Node.js", spec, f"奇數版本不是 LTS；最新 LTS 為 {latest}"))
             else:
                 res = "✅"
         rows.append(("Node.js", spec or "—", str(latest or "?"), res))
@@ -473,17 +473,17 @@ def framework_findings(root: Path, tfms: set, has_js: bool, findings: list):
 # ---------------------------------------------------------------------------
 # Rules
 # ---------------------------------------------------------------------------
-LICENSE_TEXT = {"weak": "Weak copyleft: confirm dynamically referenced, unmodified, not merged into a single file",
-                "ask": "License needs manual review (custom / dual / revenue threshold / missing)",
-                "banned": "Copyleft license: prohibited"}
+LICENSE_TEXT = {"weak": "弱 copyleft：需確認動態引用、未修改、未單檔打包",
+                "ask": "授權需人工確認（自訂/雙授權/營收門檻/未標示）",
+                "banned": "copyleft 授權，禁止使用"}
 
 
 def license_label(e: dict | None) -> str:
     if not e:
         return "?"
     if e["license"] and e["license_url"]:
-        return f"{e['license']} (inferred from license URL: {e['license_url']})"
-    return e["license"] or (f"license file: {e['license_url']}" if e["license_url"] else "missing")
+        return f"{e['license']}（由授權 URL 推定：{e['license_url']}）"
+    return e["license"] or (f"授權檔：{e['license_url']}" if e["license_url"] else "未標示")
 
 
 def license_key(e: dict) -> str:
@@ -493,7 +493,7 @@ def license_key(e: dict) -> str:
 
 def check(item: dict, meta: dict | None, findings: list) -> dict:
     eco, name, ver = item["eco"], item["name"], item["version"]
-    kind = "direct" if item["direct"] else "transitive"
+    kind = "直接" if item["direct"] else "間接"
     row = {"name": name, "eco": eco, "version": ver, "cand": "?", "license": "?", "last": "?", "flags": [],
            "dev": item["dev"]}
 
@@ -502,47 +502,47 @@ def check(item: dict, meta: dict | None, findings: list) -> dict:
         row["flags"].append(level)
 
     if meta is None:
-        flag("⚠️", "Package not found in the registry (private feed?); review manually")
+        flag("⚠️", "registry 查無此套件（私有來源？）需人工確認")
         return row
     e = meta["versions"].get(norm(ver))
     row["license"] = license_label(e)
     lstatus = classify_license(e["license"]) if e else "ask"
     if e and lstatus != "ok":
-        flag("❌" if lstatus == "banned" else "⚠️", f"{LICENSE_TEXT[lstatus]}: {row['license']}")
+        flag("❌" if lstatus == "banned" else "⚠️", f"{LICENSE_TEXT[lstatus]}：{row['license']}")
     if e is None:
-        flag("⚠️", "Version not found in the registry; review manually")
+        flag("⚠️", "registry 查無此版本，需人工確認")
     else:
         a = age_days(e["published"])
         if e["published"] and NOW - e["published"] < MIN_RELEASE_AGE:
-            flag("❌", f"Published less than 7 days ago ({a} days, {day(e['published'])})")
+            flag("❌", f"發布未滿 7 天（{a} 天，{day(e['published'])}）")
         if e["deprecated"]:
-            flag("❌", f"Deprecated: {str(e['deprecated'])[:160]}")
+            flag("❌", f"已 deprecated：{str(e['deprecated'])[:160]}")
     if not item["direct"]:
         return row
 
     # Direct packages: every rule.
     if not stable(ver):
-        flag("❌", "Prerelease version (preview/beta/RC)")
+        flag("❌", "使用預覽版（preview/beta/RC）")
     tmaj = item["tfm_major"]
     if eco == "nuget" and tmaj and FRAMEWORK_VERSIONED.match(name) and major(ver) != tmaj:
-        flag("❌", f"Major does not match the main framework: target is .NET {tmaj}, use {tmaj}.x")
+        flag("❌", f"主套件大版本不符：目標框架為 .NET {tmaj}，應使用 {tmaj}.x")
     last = last_release(meta)
     row["last"] = day(last)
     if last and NOW - last > MAINTAINED_WITHIN:
-        flag("❌", f"Not actively maintained: last release {day(last)}")
+        flag("❌", f"未持續維護：最後發布 {day(last)}")
     c = candidate(meta, eco, name, tmaj)
     if c is None or vtuple(c["version"]) < vtuple(ver):
         row["cand"] = "—"
         if not (e and e["deprecated"]):  # a deprecated package already says why
-            flag("⚠️", "No version satisfies the rules")
+            flag("⚠️", "找不到符合規則的版本")
         return row
     row["cand"] = c["version"]
     if vtuple(c["version"]) > vtuple(ver):
-        note = f"Upgrade available: {c['version']} (existing packages are not upgraded unasked)"
+        note = f"可升級至 {c['version']}（既有套件不主動升級）"
         if e and license_key(c) != license_key(e):
-            note += f"; ⚠️ license changes: {row['license']} → {license_label(c)} ({LICENSE_TEXT.get(classify_license(c['license']), 'commercially usable')})"
+            note += f"；⚠️ 授權變更：{row['license']} → {license_label(c)}（{LICENSE_TEXT.get(classify_license(c['license']), '可商用')}）"
         if eco == "npm" and major(c["version"]) != major(ver) and c.get("peer"):
-            note += "; peerDependencies of the new major: " + ", ".join(f"{k} {v}" for k, v in c["peer"].items())
+            note += "；新大版本的 peerDependencies：" + ", ".join(f"{k} {v}" for k, v in c["peer"].items())
         flag("ℹ️", note)
     return row
 
@@ -571,16 +571,16 @@ def main() -> int:
     for pj in (f for f in files if f.name == "package.json"):
         if not any((pj.parent / n).exists() for n in ("pnpm-lock.yaml", "package-lock.json")) and \
                 not any(l.parent in pj.parents for l in js_locks):
-            errors.append(f"{pj.parent.relative_to(root) or '.'}: package.json without a lockfile; resolved versions cannot be checked")
+            errors.append(f"{pj.parent.relative_to(root) or '.'}：有 package.json 但沒有 lockfile，無法檢查實際版本")
 
     if not items and not errors:
-        print(f"No .NET project or npm/pnpm lockfile found under {root}.")
+        print(f"在 {root} 找不到 .NET 專案或 npm/pnpm lockfile。")
         return 2
 
     findings: list[tuple] = []
     for where, val in PNPM_GATES:
-        findings.append(("❌", "pnpm", f"{where}/pnpm-workspace.yaml", val or "not set",
-                         f"minimumReleaseAge must be ≥ {PNPM_MIN_RELEASE_AGE_MINUTES} (7 days)"))
+        findings.append(("❌", "pnpm", f"{where}/pnpm-workspace.yaml", val or "未設定",
+                         f"minimumReleaseAge 需 ≥ {PNPM_MIN_RELEASE_AGE_MINUTES}（7 天）"))
     fw_rows = framework_findings(root, tfms, bool(js_locks), findings)
 
     uniq = {(it["eco"], it["name"].lower()): it["name"] for it in items.values()}
@@ -593,7 +593,7 @@ def main() -> int:
                 metas[futs[fut]] = fut.result()
             except Exception as ex:  # network failure → cannot judge, never silently pass
                 metas[futs[fut]] = None
-                errors.append(f"Lookup of {futs[fut][1]} failed: {ex}")
+                errors.append(f"查詢 {futs[fut][1]} 失敗：{ex}")
 
     direct_rows = []
     for it in sorted(items.values(), key=lambda i: (i["eco"], i["name"].lower())):
@@ -603,27 +603,27 @@ def main() -> int:
 
     n_direct = sum(1 for i in items.values() if i["direct"])
     count = {lv: sum(1 for f in findings if f[0] == lv) for lv in ("❌", "⚠️", "ℹ️")}
-    out = ["# Package Compliance Report", "",
-           f"- Project: `{root}`",
-           f"- Checked: {NOW.strftime('%Y-%m-%d %H:%M')} UTC",
-           f"- Scope: {n_direct} direct, {len(items) - n_direct} transitive",
-           f"- Result: ❌ violations {count['❌']} · ⚠️ needs review {count['⚠️']} · ℹ️ suggestions {count['ℹ️']}", ""]
+    out = ["# 套件合規報告", "",
+           f"- 專案：`{root}`",
+           f"- 檢查時間：{NOW.strftime('%Y-%m-%d %H:%M')} UTC",
+           f"- 範圍：直接 {n_direct} 個、間接 {len(items) - n_direct} 個",
+           f"- 結果：❌ 違規 {count['❌']} · ⚠️ 需確認 {count['⚠️']} · ℹ️ 建議 {count['ℹ️']}", ""]
     if errors:
-        out += ["## Could not check", ""] + [f"- {cell(e)}" for e in errors] + [""]
+        out += ["## 無法檢查", ""] + [f"- {cell(e)}" for e in errors] + [""]
     if fw_rows:
-        out += ["## Framework / runtime", "", "| Item | Current | Latest LTS | Result |", "|---|---|---|---|"]
+        out += ["## 框架 / 執行環境", "", "| 項目 | 目前 | 最新 LTS | 結果 |", "|---|---|---|---|"]
         out += [f"| {' | '.join(cell(c) for c in r)} |" for r in fw_rows] + [""]
-    for lv, title in (("❌", "Violations"), ("⚠️", "Needs review"), ("ℹ️", "Suggestions")):
+    for lv, title in (("❌", "違規"), ("⚠️", "需確認"), ("ℹ️", "建議")):
         rows = [f for f in findings if f[0] == lv]
         if rows:
-            out += [f"## {lv} {title}", "", "| Type | Package | Version | Detail |", "|---|---|---|---|"]
+            out += [f"## {lv} {title}", "", "| 類型 | 套件 | 版本 | 說明 |", "|---|---|---|---|"]
             out += [f"| {cell(t)} | {cell(n)} | {cell(v)} | {cell(m)} |" for _, t, n, v, m in rows] + [""]
     if direct_rows:
-        out += ["## Direct packages", "", "| Ecosystem | Package | Current | Latest compliant | License | Last release | Result |",
+        out += ["## 直接套件一覽", "", "| 生態系 | 套件 | 目前 | 合規最新版 | 授權 | 最後發布 | 結果 |",
                 "|---|---|---|---|---|---|---|"]
         for r in direct_rows:
             res = "".join(sorted(set(r["flags"]), key="❌⚠️ℹ️".index)) or "✅"
-            name = r["name"] + (" (dev)" if r["dev"] and r["eco"] == "npm" else "")
+            name = r["name"] + ("（dev）" if r["dev"] and r["eco"] == "npm" else "")
             out.append(f"| {r['eco']} | {cell(name)} | {cell(r['version'])} | {cell(r['cand'])} | "
                        f"{cell(r['license'])} | {r['last']} | {res} |")
         out.append("")

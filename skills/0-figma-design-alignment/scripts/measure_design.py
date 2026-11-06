@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""掃描設計稿圖片，找出元件邊界與色值。
+"""Scan a design image for element edges and colors.
 
-目測比對是這個流程最常見的失敗原因——差 12px 的寬度、偏移 100px 的文字，
-肉眼都說「差不多」。這個腳本用像素掃描取代目測。
+Eyeball comparison is this workflow's most common failure — a width off by 12px
+or text shifted 100px both look "about right". Pixel scanning replaces it.
+Printed output is in Traditional Chinese (human-facing).
 
-用法：
-  # 找白卡邊界（掃描 y=400 這條橫線上的淺色區塊）
-  python3 measure_design.py 設計稿.png --scan-y 400 --mode light
+Usage:
+  # White card edges (light segments on the horizontal line y=400)
+  python3 measure_design.py design.png --scan-y 400 --mode light
 
-  # 找深色元素（文字、深色按鈕）
-  python3 measure_design.py 設計稿.png --scan-y 722 --mode dark
+  # Dark elements (text, dark buttons)
+  python3 measure_design.py design.png --scan-y 722 --mode dark
 
-  # 限定 x 範圍（只看卡片內部）
-  python3 measure_design.py 設計稿.png --scan-y 640 --mode mid --x-range 780 1220
+  # Limit the x range (inside the card only)
+  python3 measure_design.py design.png --scan-y 640 --mode mid --x-range 780 1220
 
-  # 取某點色碼
-  python3 measure_design.py 設計稿.png --pick 100 200
+  # Color at a point
+  python3 measure_design.py design.png --pick 100 200
 
-  # 掃一整段 y 找元件（回報每條掃描線的區段）
-  python3 measure_design.py 設計稿.png --scan-range 300 360 --mode mid
+  # Scan a y band to find an element (segments for every scan line)
+  python3 measure_design.py design.png --scan-range 300 360 --mode mid
 """
 import argparse
 import sys
@@ -30,11 +31,11 @@ except ImportError:
 
 
 def classify(px, mode):
-    """判斷像素是否屬於目標類別。
+    """Whether a pixel belongs to the target class.
 
-    light：近白（白卡、白底彈窗）
-    dark ：深色（文字、深色按鈕）
-    mid  ：介於兩者（淺灰輸入框、淺色方格）——最常用來找表單元件
+    light: near white (white cards, white dialogs)
+    dark : dark (text, dark buttons)
+    mid  : in between (light-gray inputs, light boxes) — the usual choice for form elements
     """
     r, g, b = px[:3]
     if mode == "light":
@@ -45,12 +46,12 @@ def classify(px, mode):
 
 
 def segments(im, y, mode, x0, x1, gap=3):
-    """回傳該掃描線上符合條件的連續區段 [(起, 迄, 寬), ...]。
+    """Contiguous matching segments on the scan line: [(start, end, width), ...].
 
-    分段而非只回傳頭尾，是因為一列可能有多個元件（例如三個性別按鈕、
-    六個驗證碼格）——只看頭尾會誤判成一個大元件。
+    Segments rather than first/last, because one row may hold several elements
+    (three gender buttons, six OTP boxes) — first/last alone would read as one big element.
 
-    gap：間隔超過幾 px 才算不同元件。找容器外框時調大（見 --outer）。
+    gap: pixels of separation before a new element starts. Raise it for container outlines (see --outer).
     """
     px = im.load()
     hits = [x for x in range(x0, x1) if classify(px[x, y], mode)]
@@ -100,7 +101,7 @@ def main():
         if not segs:
             return False
         if a.outer:
-            # 容器的左右外緣：頭尾相接，忽略內部被切斷的部分
+            # Container's outer left/right edges: join first and last, ignore inner breaks
             segs = [(segs[0][0], segs[-1][1], segs[-1][1] - segs[0][0] + 1)]
         print(f"\ny={y}（{a.mode}{'，outer' if a.outer else ''}）")
         for s, e, wd in segs:

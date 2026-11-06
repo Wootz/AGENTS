@@ -2,6 +2,8 @@
 
 ## 🌐 Language
 All AI responses must be in **Traditional Chinese (正體中文)**.
+- **Human-facing output** — documents, reports, doc templates, code comments, and script messages that a skill or task produces — is in Traditional Chinese.
+- **Agent-facing files** — skills (`SKILL.md`, their references and own scripts), `AGENTS.md` / `CLAUDE.md` — are in English. A skill description may add Chinese trigger keywords.
 
 ## 🎯 General Principles
 - 🥇 **Priorities**: Security > Readability > Performance. Never trade security for anything; trade readability for performance only for a measured bottleneck. A security issue found outside the current task is reported and asked about, not fixed in passing.
