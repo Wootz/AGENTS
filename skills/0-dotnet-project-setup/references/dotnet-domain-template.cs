@@ -2,6 +2,9 @@
 // DDD Domain Layer Templates
 // Scope: Domain project only — zero framework dependencies
 // Place files in src/<ProjectName>.Domain/ following the directory structure
+// Code comments (XML docs and inline comments) are copied into the project and
+// are written in Traditional Chinese; the FILE banners and the ═══ note blocks
+// are guidance for the agent and are not copied.
 // ============================================================================
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,13 +14,13 @@
 namespace YourProject.Domain.Events;
 
 /// <summary>
-/// Marker interface for all domain events.
-/// Domain events are raised inside aggregates and dispatched after the
-/// transaction commits via IDomainEventDispatcher (Domain layer).
+/// 所有 domain event 的標記介面。
+/// Domain event 於 aggregate 內產生，並在交易 commit 後
+/// 透過 IDomainEventDispatcher（Domain 層）派送。
 /// </summary>
 public interface IDomainEvent
 {
-    /// <summary>UTC timestamp when the event occurred.</summary>
+    /// <summary>事件發生的 UTC 時間。</summary>
     DateTime OccurredOn { get; }
 }
 
@@ -28,7 +31,7 @@ public interface IDomainEvent
 namespace YourProject.Domain.Events;
 
 /// <summary>
-/// Base record for domain events. Use as a base for all concrete events.
+/// Domain event 的基底 record，所有具體事件皆繼承此型別。
 /// </summary>
 public abstract record DomainEvent : IDomainEvent
 {
@@ -44,35 +47,32 @@ using YourProject.Domain.Events;
 namespace YourProject.Domain.Entities;
 
 /// <summary>
-/// Base class for all Aggregate Roots.
-/// Holds a collection of uncommitted domain events raised during the current
-/// operation. Events are dispatched by the Application layer after the
-/// transaction commits — never dispatched inside the domain itself.
+/// 所有 Aggregate Root 的基底類別。
+/// 保存本次操作中產生、尚未 commit 的 domain event。
+/// 事件由 Application 層在交易 commit 後派送——絕不在 domain 內部派送。
 /// </summary>
 public abstract class AggregateRoot<TId>
 {
     private readonly List<IDomainEvent> _domainEvents = [];
 
-    /// <summary>Strongly-typed aggregate identity.</summary>
+    /// <summary>強型別的 aggregate 識別值。</summary>
     public TId Id { get; protected set; } = default!;
 
     /// <summary>
-    /// Read-only snapshot of uncommitted domain events.
-    /// Consumed by IUnitOfWork during CommitAsync to dispatch events after
-    /// the persistence transaction commits successfully.
+    /// 尚未 commit 的 domain event 唯讀快照。
+    /// 由 IUnitOfWork 於 CommitAsync 取用，在持久化交易成功 commit 後派送。
     /// </summary>
     public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
     /// <summary>
-    /// Called inside aggregate methods to record a domain event.
-    /// The event is NOT dispatched here — only queued for later dispatch.
+    /// 於 aggregate 方法內呼叫以記錄 domain event。
+    /// 此處不會派送事件——只會排入佇列等待稍後派送。
     /// </summary>
     protected void AddDomainEvent(IDomainEvent domainEvent)
         => _domainEvents.Add(domainEvent);
 
     /// <summary>
-    /// Clears all queued domain events. Called by IUnitOfWork after events
-    /// have been dispatched successfully.
+    /// 清除所有已排入的 domain event。由 IUnitOfWork 在事件派送成功後呼叫。
     /// </summary>
     public void ClearDomainEvents() => _domainEvents.Clear();
 }
@@ -84,8 +84,8 @@ public abstract class AggregateRoot<TId>
 namespace YourProject.Domain.Entities;
 
 /// <summary>
-/// Base class for non-root entities (children within an aggregate).
-/// No domain events — only AggregateRoot raises events.
+/// 非 root entity（aggregate 內的子實體）的基底類別。
+/// 不產生 domain event——只有 AggregateRoot 會產生事件。
 /// </summary>
 public abstract class Entity<TId>
 {
@@ -115,12 +115,12 @@ public abstract class Entity<TId>
 namespace YourProject.Domain.Common;
 
 /// <summary>
-/// Result pattern for domain operations.
-/// Use instead of throwing exceptions for expected business rule violations.
-/// Only throw exceptions for truly unexpected / infrastructure failures.
+/// Domain 操作的 Result pattern。
+/// 預期內的業務規則違反以此回傳，不拋出例外；
+/// 只有真正非預期的錯誤或基礎設施故障才拋出例外。
 ///
-/// Usage (success):  Result.Ok(order)
-/// Usage (failure):  Result.Fail&lt;Order&gt;("Order already cancelled.")
+/// 成功：Result.Ok(order)
+/// 失敗：Result.Fail&lt;Order&gt;("Order already cancelled.")
 /// </summary>
 public sealed class Result<T>
 {
@@ -143,14 +143,14 @@ public sealed class Result<T>
         => new(default, false, error);
 
     /// <summary>
-    /// Map the value if successful; propagate the error otherwise.
+    /// 成功時轉換值；失敗時原樣傳遞錯誤。
     /// </summary>
     public Result<TOut> Map<TOut>(Func<T, TOut> mapper)
         => IsSuccess ? Result<TOut>.Ok(mapper(Value!)) : Result<TOut>.Fail(Error);
 }
 
 /// <summary>
-/// Non-generic Result for void operations.
+/// 無回傳值操作使用的非泛型 Result。
 /// </summary>
 public sealed class Result
 {
@@ -175,14 +175,13 @@ public sealed class Result
 namespace YourProject.Domain.ValueObjects;
 
 /// <summary>
-/// Prefer using C# `record` types for Value Objects — they provide structural
-/// equality for free with zero boilerplate:
+/// Value Object 優先使用 C# `record`——不需任何樣板程式碼就有結構相等性：
 ///
 ///   public sealed record Money(decimal Amount, string Currency);
 ///   public sealed record EmailAddress(string Value);
 ///
-/// Use this abstract class only when you need custom validation logic in the
-/// constructor that cannot live in a record primary constructor.
+/// 只有在建構子需要 record primary constructor 放不下的自訂驗證邏輯時，
+/// 才使用這個抽象類別。
 /// </summary>
 public abstract class ValueObject
 {
@@ -220,23 +219,23 @@ using YourProject.Domain.Entities;
 namespace YourProject.Domain.Interfaces;
 
 /// <summary>
-/// Write-side repository for the Order aggregate.
-/// Defined in Domain under the Rich model (the aggregate's own persistence contract) and in
-/// Application under the Anemic model. Injected by CommandHandlers only — never by Domain
-/// Services and never by QueryHandlers (those use IXxxReadRepository).
-/// Implemented in the Persistence layer (EF Core, Dapper/raw SQL, or another provider).
-/// Repositories operate at the aggregate boundary — never expose IQueryable&lt;T&gt;
-/// outside Persistence, and never return DTOs (that is IOrderReadRepository's job).
+/// Order aggregate 的寫入端 repository。
+/// Rich model 定義於 Domain（aggregate 自身的持久化契約），Anemic model 定義於 Application。
+/// 只由 CommandHandler 注入——Domain Service 與 QueryHandler 一律不注入
+/// （QueryHandler 使用 IXxxReadRepository）。
+/// 實作位於 Persistence 層（EF Core、Dapper/raw SQL 或其他 provider）。
+/// Repository 以 aggregate 為邊界運作——IQueryable&lt;T&gt; 不得流出 Persistence，
+/// 也不回傳 DTO（那是 IOrderReadRepository 的職責）。
 /// </summary>
 public interface IOrderRepository
 {
-    /// <summary>Loads a tracked aggregate by identity, or null when absent.</summary>
+    /// <summary>依識別值載入受追蹤的 aggregate；不存在時回傳 null。</summary>
     Task<Order?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Aggregate-specific loads belong here, named for the use case they serve.
-    /// Declare only what a CommandHandler actually calls —
-    /// do not pre-emptively add CRUD methods "for completeness".
+    /// 專屬於此 aggregate 的載入方法放在這裡，以其服務的 use case 命名。
+    /// 只宣告 CommandHandler 實際呼叫的方法——
+    /// 不要為了「完整」預先加入 CRUD 方法。
     /// </summary>
     Task<IReadOnlyList<Order>> GetPendingForCustomerAsync(
         Guid customerId,
@@ -282,9 +281,9 @@ namespace YourProject.Domain.Interfaces;
 public interface IUnitOfWork : IAsyncDisposable
 {
     /// <summary>
-    /// Commits all pending persistence operations for the current use case.
-    /// Implementations must keep the transaction boundary inside Persistence
-    /// and must not expose EF Core or SQL transaction types to Domain/Application.
+    /// Commit 本次 use case 所有待處理的持久化操作。
+    /// 實作必須將交易邊界留在 Persistence 內，
+    /// 不得把 EF Core 或 SQL 的交易型別暴露給 Domain / Application。
     /// </summary>
     Task CommitAsync(CancellationToken cancellationToken = default);
 }
@@ -302,21 +301,20 @@ public interface IUnitOfWork : IAsyncDisposable
 // {
 //     private IDbContextTransaction? _transaction;
 //
-//     // Persistence repositories that execute Dapper/raw SQL may inject this
-//     // concrete AppUnitOfWork and call EnsureTransactionAsync() so EF and raw
-//     // SQL share the same connection and transaction. Do not expose this
-//     // concrete type to Domain or Application.
+//     // 執行 Dapper/raw SQL 的 Persistence repository 可注入這個具體的
+//     // AppUnitOfWork 並呼叫 EnsureTransactionAsync()，讓 EF 與 raw SQL
+//     // 共用同一條連線與交易。不要把這個具體型別暴露給 Domain 或 Application。
 //     public async Task<IDbContextTransaction> EnsureTransactionAsync(CancellationToken cancellationToken = default)
 //         => _transaction ??= await dbContext.Database.BeginTransactionAsync(cancellationToken);
 //
-//     // CRITICAL — Connection and CurrentTransaction MUST both come from this same
-//     // dbContext. BeginTransactionAsync() opens the transaction ON this connection,
-//     // so a Dapper command that (a) executes on THIS Connection and (b) passes THIS
-//     // CurrentTransaction is enrolled in the same transaction as EF's SaveChanges.
-//     // If a repo opens its own SqlConnection instead of using this Connection,
-//     // passing CurrentTransaction either throws ("transaction not associated with
-//     // connection") or — worse — the two connections run as independent
-//     // transactions and consistency is silently broken. Never new up a connection.
+//     // 關鍵——Connection 與 CurrentTransaction 必須都來自同一個 dbContext。
+//     // BeginTransactionAsync() 是在這條連線上開啟交易，所以 Dapper 指令
+//     // (a) 在這個 Connection 上執行、且 (b) 傳入這個 CurrentTransaction，
+//     // 才會與 EF 的 SaveChanges 加入同一筆交易。
+//     // 若 repository 自行開 SqlConnection 而非使用這個 Connection，傳入
+//     // CurrentTransaction 不是拋出例外（「transaction not associated with
+//     // connection」），就是更糟——兩條連線各自成為獨立交易，一致性被靜默破壞。
+//     // 絕對不要自行建立連線。
 //     public DbConnection Connection => dbContext.Database.GetDbConnection();
 //
 //     public DbTransaction? CurrentTransaction =>
@@ -324,13 +322,12 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async Task CommitAsync(CancellationToken cancellationToken = default)
 //     {
-//         // 1. Collect pending domain events before saving.
-//         //    NOTE: AggregateRoot<Guid> is hard-coded here. If the project uses a
-//         //    different aggregate id type (int, long, a strongly-typed id), change
-//         //    this type argument to match — otherwise no events are ever collected
-//         //    and the failure is SILENT: everything commits, nothing dispatches.
-//         //    With several id types in play, mark aggregates with a non-generic
-//         //    IHasDomainEvents interface and query Entries<IHasDomainEvents>().
+//         // 1. 存檔前先收集待派送的 domain event。
+//         //    注意：這裡寫死 AggregateRoot<Guid>。若專案的 aggregate 識別值是
+//         //    其他型別（int、long、強型別 id），必須同步修改這個型別參數——
+//         //    否則永遠收集不到事件，而且失敗是靜默的：資料全部 commit，事件一個都不派送。
+//         //    若有多種識別值型別，改以非泛型的 IHasDomainEvents 介面標記 aggregate，
+//         //    並查詢 Entries<IHasDomainEvents>()。
 //         var aggregates = dbContext.ChangeTracker
 //             .Entries<AggregateRoot<Guid>>()
 //             .Where(e => e.Entity.DomainEvents.Count > 0)
@@ -339,12 +336,10 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //         var domainEvents = aggregates.SelectMany(a => a.DomainEvents).ToList();
 //
-//         // 2. Commit persistence first. An explicit transaction is only needed
-//         //    when something OTHER than SaveChangesAsync also writes — a Dapper
-//         //    /raw-SQL repository that called EnsureTransactionAsync(). On its
-//         //    own SaveChangesAsync is already atomic, so opening a transaction
-//         //    for every use case just adds a BEGIN/COMMIT round-trip and holds
-//         //    the connection longer.
+//         // 2. 先 commit 持久化。只有在 SaveChangesAsync 以外還有其他寫入時——
+//         //    也就是 Dapper/raw SQL repository 呼叫過 EnsureTransactionAsync()——
+//         //    才需要明確的交易。單獨的 SaveChangesAsync 本身就是 atomic，
+//         //    每個 use case 都開交易只會多一次 BEGIN/COMMIT 往返，並延長佔用連線的時間。
 //         if (_transaction is null)
 //         {
 //             await dbContext.SaveChangesAsync(cancellationToken);
@@ -358,42 +353,36 @@ public interface IUnitOfWork : IAsyncDisposable
 //             }
 //             catch
 //             {
-//                 // Rolling back can itself fail — the connection may already be
-//                 // gone, or the server may have aborted the transaction. Swallow
-//                 // that one: the ORIGINAL exception is what the caller needs to
-//                 // see, and letting the rollback's exception propagate would mask
-//                 // the actual cause of failure.
+//                 // Rollback 本身也可能失敗——連線可能已斷，或伺服器已中止交易。
+//                 // 吞掉這個例外：呼叫端需要看到的是「原始」例外，
+//                 // 讓 rollback 的例外往外拋會掩蓋真正的失敗原因。
 //                 try { await _transaction.RollbackAsync(cancellationToken); }
-//                 catch { /* keep the original exception as the reported cause */ }
+//                 catch { /* 保留原始例外作為回報的失敗原因 */ }
 //                 throw;
 //             }
 //             finally
 //             {
-//                 // Release it either way: a committed or rolled-back transaction
-//                 // cannot be reused, and leaving it set would make a second
-//                 // CommitAsync() in the same scope reuse a finished transaction
-//                 // (EnsureTransactionAsync's ??= would hand back the dead one),
-//                 // throwing "This transaction has completed; it is no longer
-//                 // usable". A batch job processing several use cases inside one
-//                 // scope hits this immediately.
+//                 // 不論成敗都要釋放：已 commit 或已 rollback 的交易無法重用。
+//                 // 若不清空，同一個 scope 內第二次 CommitAsync() 會重用已結束的交易
+//                 // （EnsureTransactionAsync 的 ??= 會交回那個失效的交易），
+//                 // 拋出「This transaction has completed; it is no longer usable」。
+//                 // 在同一個 scope 內處理多個 use case 的批次作業會立刻踩到。
 //                 await _transaction.DisposeAsync();
 //                 _transaction = null;
 //             }
 //         }
 //
-//         // 3. Dispatch in-process domain events only after the DB transaction
-//         //    commits successfully. Keep handlers local and non-critical.
+//         // 3. 只有在 DB 交易成功 commit 後才派送 in-process domain event。
+//         //    handler 保持在本地端且不可承擔關鍵工作。
 //         //
-//         //    ⚠️ The data is ALREADY committed at this point. If a handler throws,
-//         //    this method throws with it and the caller sees a failure even though
-//         //    the write succeeded — the side effect is lost, not the data. That is
-//         //    the deliberate trade-off behind the rule that in-process handlers
-//         //    must not perform irreversible or reliability-critical work (email,
-//         //    external calls, cross-service notifications). Anything that MUST
-//         //    happen belongs in retryable background work keyed off the committed
-//         //    state, or in an integration event published through the outbox —
-//         //    never here. Swallowing handler exceptions is not the fix either: it
-//         //    hides genuine bugs. Let it throw, and keep handlers trivial.
+//         //    ⚠️ 此時資料「已經」commit。若 handler 拋出例外，這個方法會一併拋出，
+//         //    呼叫端會看到失敗，但寫入其實已成功——遺失的是副作用，不是資料。
+//         //    這正是「in-process handler 不得執行不可逆或可靠度關鍵的工作
+//         //    （寄信、呼叫外部系統、跨服務通知）」這條規則背後刻意的取捨。
+//         //    「一定要發生」的事，應放進依已 commit 狀態觸發、可重試的背景工作，
+//         //    或透過 outbox 發布的 integration event——絕不放在這裡。
+//         //    吞掉 handler 的例外也不是解法：那會藏住真正的 bug。
+//         //    讓它拋出，並保持 handler 簡單。
 //         if (domainEvents.Count > 0)
 //             await dispatcher.DispatchAsync(domainEvents, cancellationToken);
 //
@@ -403,22 +392,21 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async ValueTask DisposeAsync()
 //     {
-//         // Reached with a live transaction only when the use case never committed
-//         // — an exception, or an early return after a Dapper repo opened one.
-//         // Disposing an IDbContextTransaction does roll back implicitly, but roll
-//         // back explicitly so the intent is in the code rather than in EF's
-//         // disposal semantics.
+//         // 只有在 use case 從未 commit 時，才會帶著進行中的交易走到這裡
+//         // ——發生例外，或 Dapper repository 開了交易後提前 return。
+//         // Dispose IDbContextTransaction 會隱含 rollback，但仍明確 rollback，
+//         // 讓意圖寫在程式碼裡，而不是依賴 EF 的 dispose 語意。
 //         if (_transaction is not null)
 //         {
 //             try { await _transaction.RollbackAsync(); }
-//             catch { /* already completed or the connection is gone — nothing to undo */ }
+//             catch { /* 交易已結束或連線已斷——沒有可復原的東西 */ }
 //             await _transaction.DisposeAsync();
 //             _transaction = null;
 //         }
 //     }
 // }
 //
-// DI registration:
+// DI 註冊：
 // services.AddScoped<AppUnitOfWork>();
 // services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppUnitOfWork>());
 
@@ -428,7 +416,7 @@ public interface IUnitOfWork : IAsyncDisposable
 // var result = aggregate.DoSomething();
 // if (result.IsFailure) return result;
 // await _repository.AddAsync(aggregate, cancellationToken);
-// await uow.CommitAsync(cancellationToken); // commit persistence, then dispatch domain events
+// await uow.CommitAsync(cancellationToken); // 先 commit 持久化，再派送 domain event
 
 // ════════════════════════════════════════════════════════════════════════════
 // ANEMIC DOMAIN MODEL
@@ -448,16 +436,15 @@ public interface IUnitOfWork : IAsyncDisposable
 // {
 //     private IDbContextTransaction? _transaction;
 //
-//     // Persistence repositories that execute Dapper/raw SQL may inject this
-//     // concrete AppUnitOfWork and call EnsureTransactionAsync() so EF and raw
-//     // SQL share the same connection and transaction. Do not expose this
-//     // concrete type to Domain or Application.
+//     // 執行 Dapper/raw SQL 的 Persistence repository 可注入這個具體的
+//     // AppUnitOfWork 並呼叫 EnsureTransactionAsync()，讓 EF 與 raw SQL
+//     // 共用同一條連線與交易。不要把這個具體型別暴露給 Domain 或 Application。
 //     public async Task<IDbContextTransaction> EnsureTransactionAsync(CancellationToken cancellationToken = default)
 //         => _transaction ??= await dbContext.Database.BeginTransactionAsync(cancellationToken);
 //
-//     // CRITICAL — Connection and CurrentTransaction MUST both come from this same
-//     // dbContext (see the Rich implementation's note). Dapper repos execute on this
-//     // Connection and pass this CurrentTransaction; never new up a separate connection.
+//     // 關鍵——Connection 與 CurrentTransaction 必須都來自同一個 dbContext
+//     // （見 Rich 實作的說明）。Dapper repository 在這個 Connection 上執行並傳入
+//     // 這個 CurrentTransaction；絕對不要另外建立連線。
 //     public DbConnection Connection => dbContext.Database.GetDbConnection();
 //
 //     public DbTransaction? CurrentTransaction =>
@@ -465,11 +452,10 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async Task CommitAsync(CancellationToken cancellationToken = default)
 //     {
-//         // An explicit transaction is only needed when something OTHER than
-//         // SaveChangesAsync also writes — i.e. a Dapper/raw-SQL repository called
-//         // EnsureTransactionAsync(). SaveChangesAsync is already atomic on its
-//         // own, so opening a transaction unconditionally only costs a BEGIN/COMMIT
-//         // round-trip and holds the connection longer.
+//         // 只有在 SaveChangesAsync 以外還有其他寫入時——也就是 Dapper/raw SQL
+//         // repository 呼叫過 EnsureTransactionAsync()——才需要明確的交易。
+//         // SaveChangesAsync 本身就是 atomic，無條件開交易只會多一次
+//         // BEGIN/COMMIT 往返，並延長佔用連線的時間。
 //         if (_transaction is null)
 //         {
 //             await dbContext.SaveChangesAsync(cancellationToken);
@@ -483,22 +469,19 @@ public interface IUnitOfWork : IAsyncDisposable
 //         }
 //         catch
 //         {
-//             // Rolling back can itself fail (connection already gone, transaction
-//             // aborted server-side). Swallow that one — the ORIGINAL exception is
-//             // the cause the caller needs; letting the rollback's exception
-//             // propagate would mask it.
+//             // Rollback 本身也可能失敗（連線已斷、伺服器端已中止交易）。
+//             // 吞掉這個例外——呼叫端需要的是「原始」例外；
+//             // 讓 rollback 的例外往外拋會掩蓋它。
 //             try { await _transaction.RollbackAsync(cancellationToken); }
-//             catch { /* keep the original exception as the reported cause */ }
+//             catch { /* 保留原始例外作為回報的失敗原因 */ }
 //             throw;
 //         }
 //         finally
 //         {
-//             // Release it either way — a completed transaction cannot be reused,
-//             // and leaving it set would make a second CommitAsync() in the same
-//             // scope reuse a dead transaction via EnsureTransactionAsync's ??=,
-//             // throwing "This transaction has completed; it is no longer usable".
-//             // A batch job running several use cases inside one scope hits this
-//             // immediately.
+//             // 不論成敗都要釋放——已結束的交易無法重用。若不清空，同一個 scope 內
+//             // 第二次 CommitAsync() 會透過 EnsureTransactionAsync 的 ??= 重用失效的交易，
+//             // 拋出「This transaction has completed; it is no longer usable」。
+//             // 在同一個 scope 內執行多個 use case 的批次作業會立刻踩到。
 //             await _transaction.DisposeAsync();
 //             _transaction = null;
 //         }
@@ -506,21 +489,21 @@ public interface IUnitOfWork : IAsyncDisposable
 //
 //     public async ValueTask DisposeAsync()
 //     {
-//         // Only reached with a live transaction when the use case never committed
-//         // — an exception, or an early return after a Dapper repo opened one.
-//         // Disposal rolls back implicitly, but do it explicitly so the intent is
-//         // in the code rather than in EF's disposal semantics.
+//         // 只有在 use case 從未 commit 時，才會帶著進行中的交易走到這裡
+//         // ——發生例外，或 Dapper repository 開了交易後提前 return。
+//         // Dispose 會隱含 rollback，但仍明確 rollback，
+//         // 讓意圖寫在程式碼裡，而不是依賴 EF 的 dispose 語意。
 //         if (_transaction is not null)
 //         {
 //             try { await _transaction.RollbackAsync(); }
-//             catch { /* already completed or the connection is gone */ }
+//             catch { /* 交易已結束或連線已斷 */ }
 //             await _transaction.DisposeAsync();
 //             _transaction = null;
 //         }
 //     }
 // }
 //
-// DI registration:
+// DI 註冊：
 // services.AddScoped<AppUnitOfWork>();
 // services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppUnitOfWork>());
 
@@ -529,7 +512,7 @@ public interface IUnitOfWork : IAsyncDisposable
 // await using var uow = serviceProvider.GetRequiredService<IUnitOfWork>();
 // await _repository.AddAsync(entity, cancellationToken);
 // otherRepository.Update(otherEntity);
-// await uow.CommitAsync(cancellationToken); // the only commit point for the use case
+// await uow.CommitAsync(cancellationToken); // 此 use case 唯一的 commit 點
 
 // ── Dapper/raw SQL repository sharing the UoW transaction ────────────────────
 // A Persistence-layer repo that needs a narrow raw-SQL UPDATE (counter, flag,
@@ -545,20 +528,20 @@ public interface IUnitOfWork : IAsyncDisposable
 // SaveChanges and this UPDATE together, or rolls both back.
 //
 // using Dapper;
-// using YourProject.Persistence.UnitOfWork;   // concrete AppUnitOfWork (Persistence-internal)
+// using YourProject.Persistence.UnitOfWork;   // 具體的 AppUnitOfWork（僅限 Persistence 內部）
 //
 // public sealed class ProductStockRepository(AppUnitOfWork uow)
 // {
 //     public async Task DeductStockAsync(Guid productId, int qty, CancellationToken ct)
 //     {
-//         await uow.EnsureTransactionAsync(ct);            // (1) ensure tx is open
+//         await uow.EnsureTransactionAsync(ct);            // (1) 確保交易已開啟
 //         var affected = await uow.Connection.ExecuteAsync(new CommandDefinition(
 //             "UPDATE Products SET Stock = Stock - @qty WHERE Id = @productId AND Stock >= @qty",
 //             new { productId, qty },
-//             transaction: uow.CurrentTransaction,         // (2)+(3) same connection + tx
+//             transaction: uow.CurrentTransaction,         // (2)+(3) 同一條連線＋同一筆交易
 //             cancellationToken: ct));
 //         if (affected == 0)
-//             throw new DomainException("Insufficient stock"); // atomic guard: no oversell
+//             throw new DomainException("Insufficient stock"); // atomic 防護：不會超賣
 //     }
 // }
 
@@ -571,10 +554,10 @@ using YourProject.Domain.Events;
 namespace YourProject.Domain.Interfaces;
 
 /// <summary>
-/// Dispatches domain events to their Application-layer handlers.
-/// Defined in Domain so IUnitOfWork (also in Domain) can reference it directly.
-/// Implemented in Infrastructure (in-process, in-memory dispatch).
-/// Events are dispatched AFTER the persistence transaction commits — never inside it.
+/// 將 domain event 派送給 Application 層的 handler。
+/// 定義於 Domain，讓同在 Domain 的 IUnitOfWork 能直接參照。
+/// 實作位於 Infrastructure（in-process、記憶體內派送）。
+/// 事件在持久化交易 commit「之後」才派送——絕不在交易內派送。
 /// </summary>
 public interface IDomainEventDispatcher
 {
@@ -590,9 +573,9 @@ using YourProject.Domain.Events;
 namespace YourProject.Domain.Interfaces;
 
 /// <summary>
-/// Marker interface for all domain event handlers.
-/// Implement in Application/EventHandlers/ for each event type.
-/// Registered in DI so IDomainEventDispatcher can resolve and invoke them.
+/// 所有 domain event handler 的介面。
+/// 於 Application/EventHandlers/ 為每種事件型別實作。
+/// 註冊於 DI，讓 IDomainEventDispatcher 能解析並呼叫。
 /// </summary>
 public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 {
@@ -621,10 +604,10 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     }
 // }
 
-// DI registration (in Api or Infrastructure DI extension):
+// DI 註冊（於 Api 或 Infrastructure 的 DI extension）：
 // services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 // services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedEventHandler>();
-// ── or use assembly scanning ─────────────────────────────────────────────────────────────
+// ── 或使用 assembly scanning ───────────────────────────────────────────────────────────
 // foreach (var type in typeof(SomeHandler).Assembly.GetExportedTypes()
 //     .Where(t => !t.IsAbstract && !t.IsInterface))
 // {
@@ -645,9 +628,8 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 // {
 //     public Task HandleAsync(OrderCreatedEvent domainEvent, CancellationToken cancellationToken = default)
 //     {
-//         // Keep in-process handlers local and non-critical. Do not call external
-//         // systems directly here. Use Application orchestration or retryable
-//         // background work when external side effects are required.
+//         // in-process handler 保持在本地端且不承擔關鍵工作，不要在這裡直接呼叫外部系統。
+//         // 需要外部副作用時，改由 Application 編排或可重試的背景工作處理。
 //         return Task.CompletedTask;
 //     }
 // }
@@ -667,7 +649,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     public OrderStatus Status { get; private set; }
 //     public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
 //
-//     // Private constructor — use factory method for creation
+//     // 私有建構子——一律透過 factory method 建立
 //     private Order() { }
 //
 //     public static Result<Order> Create(string customerId)

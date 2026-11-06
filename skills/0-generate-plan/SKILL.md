@@ -1,38 +1,38 @@
 ---
 name: 0-generate-plan
-description: 依已核可的 Spec 產出 Spec Kit 格式的實作計畫與任務清單（Technical Context + 資料模型 + 依 User Story 分組的 Tasks），存入 docs/plans/。SRS → Spec → Plan → Code → Verify 流程的第三階段，Plan 與 Tasks 合併於同一份文件。
+description: Produce a Spec Kit–format implementation plan and task list (Technical Context + data model + Tasks grouped by User Story) from an approved Spec, saved under docs/plans/ (「產出 Plan」「寫實作計畫」「拆任務」). Stage three of the SRS → Spec → Plan → Code → Verify flow; the Plan and Tasks live in one document.
 ---
 
-# 產出 Plan（實作計畫與任務）
+# Produce a Plan (Implementation Plan and Tasks)
 
-Plan 回答 **Spec 定義的行為要怎麼在這個 codebase 實現**，並直接展開為可執行的任務清單。它是一次性產物——實作完成後即可丟棄，因為程式碼本身才是最準確的實作說明。
+A Plan answers **how the behavior defined in the Spec is realized in this codebase**, expanded directly into an executable task list. It is disposable — once implemented it can be discarded, because the code itself is the most accurate description of the implementation.
 
-採 **GitHub Spec Kit** 格式，並將 plan 與 tasks 合併於同一份文件。
+It uses the **GitHub Spec Kit** format, with plan and tasks merged into one document.
 
-> **語言**：與使用者的對話使用正體中文，Plan 內容以正體中文撰寫。技術識別名詞（類別、方法、檔案路徑）與編號前綴（`T` `US` `FR` `SC`）保留英文原文。
+> **Language**: the Plan is written in Traditional Chinese (正體中文), as in the template below. Keep technical identifiers (classes, methods, file paths) and the ID prefixes (`T` `US` `FR` `SC`) in English.
 
-## Step 1：確認 Spec 已核可
+## Step 1: Confirm the Spec is approved
 
-Plan 依 Spec 而生。動手前確認：
+The Plan derives from the Spec. Before starting, confirm:
 
-- 對應的 Spec 存在於 `docs/specs/`
-- 該 Spec 已經過使用者審查核可
-- **Spec 中沒有殘留 `[NEEDS CLARIFICATION]` 標記**
+- The matching Spec exists under `docs/specs/`
+- The user has reviewed and approved it
+- **No `[NEEDS CLARIFICATION]` markers remain in the Spec**
 
-第三點特別重要。帶著未解問題進 Plan，等於把後續實作建立在會變的前提上。若仍有標記，先回到 Spec 階段取得答覆。
+The third point matters most. Entering the Plan with open questions builds the implementation on premises that will change. If markers remain, go back to the Spec stage for answers first.
 
-**例外**：純工程決策（資料庫遷移策略、外部系統介接機制、跨切面基礎設施）沒有對外業務行為，本來就不該有 Spec，可直接規劃。
+**Exception**: pure engineering decisions (database migration strategy, external integration mechanics, cross-cutting infrastructure) have no external business behavior, should never have had a Spec, and can be planned directly.
 
-## Step 2：讀取輸入
+## Step 2: Read the inputs
 
-規劃的依據只有兩個，不要引入其他來源，也不要憑印象假設專案慣例：
+The plan rests on exactly two sources; bring in no others and assume no project conventions from memory:
 
-1. **對應的 Spec** — User Story、FR、SC 是這次要實現的目標
-2. **既有程式碼的相同模式** — 找出 codebase 裡已實作的類似功能照著做
+1. **The matching Spec** — its User Stories, FRs and SCs are the target
+2. **The same patterns in existing code** — find similar features already implemented in the codebase and follow them
 
-第 2 點的意思是：新功能應該長得像既有的，而不是另創一套。規劃時明確指出要參照哪些既有檔案。若 codebase 是全新的、沒有可循模式，就在 Plan 中明確寫出你選擇的結構並說明理由，交由使用者審查時裁決。
+Point 2 means a new feature should look like the existing ones rather than invent its own approach. Name the existing files the plan follows. If the codebase is brand new with no pattern to follow, state the structure you chose and why in the Plan, for the user to rule on at review.
 
-## 文件結構
+## Document structure
 
 ```markdown
 # 實作計畫：[功能名稱]
@@ -137,128 +137,126 @@ Plan 依 Spec 而生。動手前確認：
 ### 可平行處理的部分
 ```
 
-## 任務撰寫規則
+## Task-writing rules
 
-### 格式：`[ID] [P?] [Story] 描述`
+### Format: `[ID] [P?] [Story] description`
 
-- **[P]** — 可平行執行（不同檔案、無相依）
-- **[Story]** — 所屬 User Story（US1、US2…），供追溯
-- 描述**必須含確切檔案路徑**
+- **[P]** — can run in parallel (different files, no dependencies)
+- **[Story]** — the User Story it belongs to (US1, US2…), for tracing
+- The description **must include the exact file path**
 
-任務要具體到可以直接動手。「實作訂單查詢」不合格；「在 `src/[模組路徑]/GetOrdersQueryHandler` 實作分頁查詢，回傳欄位依對外契約」才合格——路徑與命名依專案既有結構。
+Tasks must be concrete enough to start on directly. 「實作訂單查詢」 fails; 「在 `src/[模組路徑]/GetOrdersQueryHandler` 實作分頁查詢，回傳欄位依對外契約」 passes — paths and names follow the project's existing structure.
 
-### 依 User Story 分組，不依技術分層
+### Group by User Story, not by technical layer
 
-這是 Spec Kit 任務組織的核心，也最容易寫錯。
+This is the core of Spec Kit task organization and the easiest thing to get wrong.
 
-直覺上會想按「先做完所有資料層、再做完所有服務層、再做完所有介面層」來排，但那樣要等到最後才有能動的東西。改成按 User Story 分組，每完成一個 Phase 就有一個可獨立測試、可展示的增量——P1 做完就是 MVP。
+The instinct is to finish all data-layer work, then all service-layer work, then all interface-layer work — but then nothing runs until the end. Grouping by User Story instead makes every completed Phase an independently testable, demonstrable increment — P1 done is the MVP.
 
-例外是 Phase 1（基礎建設）與 Phase 2（前置相依）：這兩階段放**所有 Story 都要用到**的東西（共用基底、資料庫連線設定、驗證框架）。判準是「不做這個，任何 Story 都無法開始」。放太多東西進 Phase 2 會讓它變成偽裝的瀑布式開發。
+The exceptions are Phase 1 (infrastructure) and Phase 2 (prerequisites): they hold what **every Story needs** (shared base, database connection setup, validation framework). The test is "without this, no Story can start". Putting too much into Phase 2 turns it into disguised waterfall.
 
-### 測試任務
+### Test tasks
 
-依專案既有的測試工具與慣例。測試任務要對應 Spec 的**驗收情境**——每條驗收情境都該找得到對應的測試任務，找不到就是計畫有缺口。單元測試中的對外 HTTP 必須 mock 或 stub。
+Follow the project's existing test tools and conventions. Test tasks map to the Spec's **acceptance scenarios** — every acceptance scenario should have a matching test task; a missing one is a gap in the plan. Outbound HTTP in unit tests must be mocked or stubbed.
 
-## 與既有架構一致
+## Stay consistent with the existing architecture
 
-不要在 Plan 裡發明新的架構規則。分層方式、命名慣例、錯誤處理、交易處理，一律以 codebase 既有模式為準，並在 Plan 中指出參照了哪些既有檔案。
+Invent no new architecture rules in the Plan. Layering, naming, error handling and transaction handling all follow the codebase's existing patterns, and the Plan names the existing files it follows.
 
-若本次設計**必須**偏離既有模式（既有結構不支援新需求），在 Plan 中明確標出偏離處與理由，交付時主動提出讓使用者決定——不要默默引入新風格。
+If the design **must** deviate from existing patterns (the existing structure cannot support the new requirement), mark the deviation and its reason explicitly in the Plan and raise it at delivery for the user to decide — never introduce a new style silently.
 
-## 設計原則：不要過度設計
+## Design principle: no over-engineering
 
-Plan 是最容易長出多餘東西的階段——因為這裡開始想「架構」，而架構很容易想過頭。
+The Plan is the stage most prone to growing extras — this is where "architecture" thinking starts, and architecture is easy to overthink.
 
-**判準：每個要建立的類別、介面、抽象層，都要能指出是哪條 FR 需要它。** 指不出來就刪掉。
+**The test: every class, interface and abstraction layer to be created must point to the FR that needs it.** If it cannot, delete it.
 
-具體要避免的：
+Specifically avoid:
 
-- **只有一個實作的介面。** 那不是抽象，是多一層跳轉。DI 與測試 mock 需要的介面照做，其他地方等到真的有第二個實作再抽。
-- **為了「以後可能會變」而預留的擴充點**——設定開關、策略模式、泛型參數、事件掛勾。以後真的變了再改，改的成本通常低於現在猜錯的成本。
-- **超出需求的通用化。** 需求要匯出訂單，就做匯出訂單，不要做「通用匯出框架」。
-- **多餘的分層。** 不要插入只是轉呼叫的中介層。
+- **Interfaces with a single implementation.** That is not abstraction but an extra hop. Interfaces needed for DI and test mocking are fine; elsewhere, extract when a second implementation actually exists.
+- **Extension points reserved for "it might change later"** — config switches, strategy patterns, generic parameters, event hooks. Change it when it really changes; that is usually cheaper than guessing wrong now.
+- **Generalization beyond the requirement.** The requirement is to export orders: build order export, not a "generic export framework".
+- **Extra layers.** Insert no intermediate layer that only forwards calls.
 
-**優先順序**：安全性 > 效能 > 可閱讀性。三者衝突時照這個順序取捨，且低順位永遠不能拿來犧牲高順位。多數程式碼三者同時成立——不要拿這條清單合理化「為了效能所以難讀」，除非你量測過並在計畫中寫出量測結果。
+**Priorities**: security > readability > performance (AGENTS.md → General Principles). When they conflict, trade off in that order; a lower priority never sacrifices a higher one. Most code satisfies all three at once — never use this list to justify "hard to read for performance" unless you measured it and wrote the measurements into the plan.
 
-同時，Plan 只能實現 Spec 已定義的行為。**Spec 沒寫的功能不要規劃進去**；覺得缺了什麼，回報讓使用者決定是否補進 Spec，不要在 Plan 裡自行補上。
+Likewise, the Plan only realizes behavior the Spec defines. **Plan no feature the Spec does not contain**; if something seems missing, report it for the user to decide whether to add it to the Spec, instead of adding it in the Plan.
 
-## 引入第三方套件前必須研究
+## Research before introducing a third-party package
 
-若規劃後認為需要新增相依套件，**先做研究再寫進計畫**，不要在任務清單裡直接寫「安裝 XXX 套件」就當作決定了。
+If the plan seems to need a new dependency, **research it before writing it into the plan**; never write "install package XXX" in the task list as if it were decided.
 
-理由很直接：套件一旦進了相依清單，它的授權條款就綁住這個產品，它的漏洞就是我們的漏洞。這是法務與資安問題，不只是技術選型。
+The reason is simple: once a package is a dependency, its license binds the product and its vulnerabilities are ours. This is a legal and security matter, not just a technology choice.
 
-### 第一個問題：真的需要嗎
+### First question: is it really needed
 
-依序確認，能停在哪一層就停在哪一層：
+Check in order and stop at the first level that works:
 
-1. **語言 / 框架內建有沒有？** 標準函式庫涵蓋的範圍比多數人以為的大。
-2. **既有相依有沒有？** 查專案的相依清單（如 `Directory.Packages.props`、`package.json`），已經有的東西不要重複引入同類套件。
-3. **自己寫幾十行能解決嗎？** 為了一個小工具函式引入整包相依，長期維護成本高於自製。
-4. 以上皆否，才進入評估。
+1. **Does the language / framework have it built in?** The standard library covers more than most people think.
+2. **Do existing dependencies cover it?** Check the project's dependency lists (e.g. `Directory.Packages.props`, `package.json`); never add a second package of the same kind.
+3. **Do a few dozen lines of our own code solve it?** Pulling in a whole dependency for a small helper costs more to maintain long-term than writing it.
+4. Only if all are no, evaluate a package.
 
-### 必須查證的項目
+### What must be verified
 
-**授權（法務風險，最優先）**
+The package rules (version, release age, maintenance, main-package constraint, license, transitive dependencies) are defined in AGENTS.md → Dependencies; apply them as written and run the `0-package-compliance` skill on the candidate. In addition:
 
-- 查出確切的授權條款，寫進計畫。不要寫「開源」——要寫 `MIT`、`Apache-2.0`、`BSD-3-Clause`。
-- **MIT / Apache-2.0 / BSD** — 一般可安全使用（Apache-2.0 另含專利授權，更有保障）。
-- **GPL / AGPL / LGPL** — **預設不可使用**。GPL 的傳染性可能要求整個產品開源，AGPL 連提供網路服務都算散布。發現是這類授權，直接排除並在計畫中說明，不要自行判斷「應該沒關係」。
-- **無授權宣告** — 等同保留全部權利，**不可使用**。沒有授權不代表可以自由使用。
-- **商用授權 / 雙授權** — 需採購，必須先提出。
-- 同時確認**傳遞相依**的授權。主套件是 MIT，但它依賴的東西可能不是。
-- 只用**穩定版**，不用 preview / beta。
+**License (legal risk, top priority)**
 
-**資安**
+- Find the exact license and write it into the plan. Never write "open source" — write `MIT`, `Apache-2.0`, `BSD-3-Clause`.
+- **No license declared** means all rights reserved — **not usable**. No license does not mean free to use.
+- **Commercial / dual license** — requires purchase and must be raised first.
 
-- 查已知漏洞：套件管理工具的稽核指令（如 `dotnet list package --vulnerable --include-transitive`、`pnpm audit`），以及 GitHub Advisory / NVD。
-- 有未修補的高風險 CVE，就是不採用的理由。
-- 留意供應鏈風險訊號：套件名稱與知名套件相近（typosquatting）、發布者無其他作品、近期換手。
+**Security**
 
-**維護狀況**
+- Check known vulnerabilities: the package manager's audit command (e.g. `dotnet list package --vulnerable --include-transitive`, `pnpm audit`), plus GitHub Advisory / NVD.
+- An unpatched high-risk CVE is a reason to reject.
+- Watch for supply-chain signals: a name close to a well-known package (typosquatting), a publisher with no other work, a recent ownership change.
 
-- 最後更新時間、未處理的 issue 數量、是否支援專案使用的執行環境版本。
-- 一年以上沒更新、或只有單一維護者的套件，要在計畫中標明這個風險。
-- 下載量可作參考，但不是安全性保證。
+**Maintenance**
 
-**取得資訊的方式**：套件的官方登錄頁（NuGet / npm）與原始碼 repo 是第一手來源。**不確定就說不確定，不要憑印象寫授權條款**——寫錯授權比不寫更危險。
+- Last update, open-issue count, support for the project's runtime version.
+- A single-maintainer package is a risk to flag in the plan.
+- Download counts are a hint, not a security guarantee.
 
-### 寫進計畫
+**Sources**: the package's official registry page (NuGet / npm) and source repository are primary sources. **Say when you are unsure; never write license terms from memory** — a wrong license is more dangerous than none.
 
-填寫「第三方套件評估」段落，然後**在交付時主動提出，等使用者決定**。授權與資安是使用者的決定，不是你的。
+### Writing it into the plan
 
-發現只有 GPL 方案可用時，照樣提出，並附上替代方案（自製、換作法、或採購商用授權），讓使用者判斷。
+Fill in the 「第三方套件評估」 section, then **raise it at delivery and wait for the user to decide**. License and security are the user's decisions, not yours.
 
-## 對照 Spec
+When only a GPL option exists, raise it anyway with alternatives (build it, change approach, or buy a commercial license) for the user to judge.
 
-「Spec 對照」表格是 Verify 階段的依據，不可省略。
+## Spec mapping
 
-有 FR 或驗收情境找不到對應實作，代表計畫有缺口；有實作對應不到任何 Spec 項目，代表做了沒人要求的東西——回頭確認是 Spec 漏寫還是範圍蔓延。
+The 「Spec 對照」 table is the basis of the Verify stage and cannot be omitted.
 
-## 遇到 Spec 沒定義的行為
+An FR or acceptance scenario without a matching implementation is a gap in the plan; an implementation that maps to no Spec item is something nobody asked for — check whether the Spec missed it or the scope crept.
 
-實作規劃常會踩到 Spec 沒寫的細節（並行衝突怎麼回應、空清單顯示什麼、超長欄位如何截斷）。
+## Behavior the Spec does not define
 
-**不要自己選一個往下做。** 停下來問使用者，並附上你的建議與理由。
+Planning often hits details the Spec does not cover (how to respond to concurrent conflicts, what an empty list shows, how overlong fields are truncated).
 
-若問題影響的是 Spec 該定義的對外行為，回報時說明這點——Spec 可能需要補充。反覆出現 Plan 無法決定的問題，通常代表 Spec 留白太多，應回到 Spec 階段補齊而非在 Plan 硬撐。
+**Do not pick one and carry on.** Stop and ask the user, with your recommendation and reasoning.
 
-## 交付
+If the question concerns external behavior the Spec should define, say so in the report — the Spec may need an addition. Repeated questions the Plan cannot settle usually mean the Spec has too many gaps; go back and fill them in the Spec stage instead of forcing it in the Plan.
 
-計畫寫入 `docs/plans/`，然後告訴使用者：
+## Delivery
 
-- 檔案位置
-- 涵蓋哪些 User Story，共幾項任務
-- 有無偏離既有架構模式之處，及其理由
-- 你做過的技術取捨
-- **要新增的第三方套件，逐一列出授權與資安查證結果**。有 GPL/AGPL、無授權宣告、需採購、或未修補漏洞的情況，明確標出來等使用者裁示——不要預設可以用。
+Write the plan to `docs/plans/`, then tell the user:
 
-然後**停下來等審查**。未經核可不得開始實作。
+- The file location
+- Which User Stories it covers and how many tasks
+- Any deviation from existing architecture patterns, and why
+- The technical trade-offs you made
+- **Every third-party package to add, with its license and security findings**. Flag GPL/AGPL, missing licenses, required purchases or unpatched vulnerabilities explicitly for the user's ruling — never assume they are usable.
 
-Plan 是一次性產物，實作完成後即可清除，不進 `docs/specs/`——那裡只放功能規格。
+Then **stop and wait for review**. No implementation without approval.
 
-## 實作階段的提醒
+The Plan is disposable and can be removed after implementation; it never goes into `docs/specs/` — that holds only feature specifications.
 
-計畫核可後進入 Code 階段。實作過程若發現計畫行不通（既有結構不支援、效能不可行），停下來說明並提出調整方案，不要默默偏離已核可的計畫。
+## During implementation
 
-實作完成後，Verify 階段依 Spec 的驗收情境與成功標準驗收。
+After approval, the Code stage begins. If implementation shows the plan cannot work (the existing structure does not support it, performance is infeasible), stop, explain, and propose an adjustment — never deviate silently from the approved plan.
+
+After implementation, the Verify stage accepts the work against the Spec's acceptance scenarios and success criteria.

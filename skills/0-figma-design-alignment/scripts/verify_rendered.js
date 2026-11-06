@@ -1,23 +1,25 @@
 /**
- * 量實際渲染畫面，與設計稿換算值比對。
+ * Measure the rendered screen and compare with the scaled design values.
  *
- * 改完就宣告完成是這個流程最常見的失敗——改的時候算對了，實際渲染出來
- * 因為 padding 疊加、flex 壓縮又是另一回事。這個腳本用來收尾驗證。
+ * Declaring done right after the edit is this workflow's most common failure —
+ * the numbers were right while editing, but rendering differs (padding stacking,
+ * flex shrinking). This script is the final verification. Result messages are
+ * in Traditional Chinese (human-facing).
  *
- * 用法：貼進 Playwright 的 browser_evaluate，改 TARGETS 與 SCALE。
- * 視窗尺寸要先設成設計稿對應的尺寸（手機 390×844、桌機依畫布寬）。
+ * Usage: paste into Playwright's browser_evaluate and edit TARGETS and SCALE.
+ * Set the viewport to the design's size first (phone 390×844, desktop per canvas width).
  */
 () => {
-  // ── 依實際情況修改 ────────────────────────────────────────────
-  const SCALE = 1.5; // 設計稿畫布倍率（1× 桌機稿填 1）
+  // ── Edit for the case at hand ─────────────────────────────────
+  const SCALE = 1.5; // design canvas scale (1 for a 1× desktop design)
 
   const TARGETS = {
-    // 名稱: { sel: CSS 選擇器, design: 設計稿量到的原始值（未除以倍率） }
+    // name: { sel: CSS selector, design: raw values measured in the design (not divided by the scale) }
     card: { sel: 'SELECTOR_HERE', design: { width: 525 } },
     input: { sel: 'SELECTOR_HERE', design: { width: 461 } },
   };
 
-  // 要驗證「A 是否置中對齊 B」時填這裡
+  // Fill in to check whether A is centered on B
   const ALIGN = [
     // { name: '倒數對齊方格', a: 'SEL_A', b: 'SEL_B' },
   ];
@@ -37,7 +39,7 @@
     if (t.design?.width) {
       row.designWidth = round(t.design.width / SCALE);
       row.diff = round(r.width - t.design.width / SCALE);
-      // 差 1px 內視為四捨五入誤差；超過就要查
+      // within 1px is rounding; more needs investigating
       if (Math.abs(row.diff) > 1) out.issues.push(`${name} 寬度差 ${row.diff}px`);
     }
     out.sizes[name] = row;
@@ -56,8 +58,8 @@
     const cb = (rb.left + rb.right) / 2;
     const diff = round(ca - cb);
     out.align.push({ name: g.name, centreA: round(ca), centreB: round(cb), diff });
-    // 置中對齊時兩者中心應一致；差很多代表用錯了排版方式
-    // （例如該置中卻用了 justify-between）
+    // Centered elements share a center; a large difference means the wrong layout
+    // (e.g. justify-between where centering was intended)
     if (Math.abs(diff) > 2) out.issues.push(`${g.name} 中心差 ${diff}px——是否誤用 justify-between？`);
   }
 

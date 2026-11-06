@@ -1,6 +1,6 @@
 ---
 name: 0-package-compliance
-description: Check a project's packages (NuGet, npm, pnpm, including transitive dependencies) against AGENTS.md → Dependencies — license, latest LTS/stable, 7-day release age, active maintenance, main-framework major. Run it after adding or upgrading any package, and whenever the user asks whether packages are compliant, whether a license is commercially usable, or to audit dependencies/licenses. Report-only: it never changes the project.
+description: Check a project's packages (NuGet, npm, pnpm, including transitive dependencies) against AGENTS.md → Dependencies — license, latest LTS/stable, 7-day release age, active maintenance, main-framework major. Run it after adding or upgrading any package, and whenever the user asks whether packages are compliant, whether a license is commercially usable, or to audit dependencies/licenses (「套件合規嗎」「授權能商用嗎」「檢查相依套件」「檢查授權」). Report-only: it never changes the project.
 ---
 
 # Package Compliance Check
