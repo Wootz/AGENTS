@@ -291,7 +291,7 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
 
 ### `Directory.Packages.props`
 
-> ⚠️ **Version Policy**: Do NOT hardcode version numbers here. At scaffold time, look up and use the **latest stable version the target framework can use** for every package — skip any version that only targets a newer .NET than `Directory.Build.props` sets. Never use preview, beta, or RC releases.
+> ⚠️ **Version Policy**: Do NOT hardcode version numbers here. At scaffold time, look up and use the **latest stable version the target framework can use** for every package — skip any version that only targets a newer .NET than `Directory.Build.props` sets. Framework-versioned packages (`Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore*`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `dotnet-ef`, `Serilog.AspNetCore`, `Serilog.Extensions.Hosting`, `Serilog.Extensions.Logging`, `Serilog.Settings.Configuration`) stay on the target framework's major. Never use preview, beta, or RC releases, or a version published less than 7 days ago.
 > ⚠️ **CPM Policy**: Project `.csproj` files must not contain `Version="..."` on `<PackageReference>` entries. All package versions live only in this file.
 
 ```xml

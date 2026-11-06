@@ -48,8 +48,10 @@
 
 ## ⚙️ Environment & Architecture
 - 💻 **SDK**: Implement using **.NET 10**. Solutions must use the modern `*.slnx` format. Central Package Management (CPM) via `Directory.Build.props` and `Directory.Packages.props` is mandatory.
-- 📦 **Package Versions**: Always use the **latest stable** version available at scaffold time. Never rely on version numbers stored in this document or from memory — look up the current release on NuGet.org before adding any package. Preview, beta, and RC releases are strictly forbidden.
-- 📜 **Package Licensing**: Only **MIT- or Apache-2.0-licensed** packages are permitted. GPL/copyleft-licensed packages are forbidden — they impose obligations incompatible with typical closed-source backends.
+- 📦 **Package Versions**: Always use the **latest stable** version available at scaffold time, of an **actively maintained** package. Never rely on version numbers stored in this document or from memory — look up the current release on NuGet.org before adding any package. Preview, beta, and RC releases are strictly forbidden, and so is any version published less than **7 days** ago (supply-chain safety).
+  - **Main-package constraint**: Packages versioned with the framework (`Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore.*`, EF providers, `dotnet-ef`, and Serilog's `AspNetCore`/`Extensions.Hosting`/`Extensions.Logging`/`Settings.Configuration`) use the latest stable release of the **target framework's major** — e.g., on .NET 8, use the latest `8.x.x` even if `10.x.x` exists.
+- 📜 **Package Licensing**: Any **commercially usable** license is permitted (MIT, Apache 2.0, BSD, ISC, etc.). GPL/copyleft-licensed packages are forbidden — they impose obligations incompatible with typical closed-source backends. For a custom/proprietary license that permits commercial use, ask the user before adding the package.
+  - **Weak copyleft (LGPL, MPL 2.0)**: Allowed only when referenced as a separate DLL, unmodified, and never merged into a single file (`PublishSingleFile`, Native AOT, ILMerge).
 - 🔐 **Secrets**: Never hardcode secrets (connection strings, API keys, tokens). Use environment variables or a secret manager for every secret. `.gitignore` must exclude local env files, secrets, and build output.
 - 🎨 **Code Style Consistency**: All code across the entire solution **must** adhere to a single, unified code style standard. Establish an `.editorconfig` file at the solution root that enforces naming conventions (PascalCase for public members, camelCase for parameters/locals), indentation (4 spaces), line length limits, and brace placement. Run `dotnet format` as part of the CI/CD pipeline to enforce consistency. No inconsistent naming patterns, formatting, or structural conventions are permitted across projects or layers.
 - ✒️ **Constructors**: All classes requiring DI **must strictly use .NET 10 Primary Constructors**. Explicit boilerplate constructor blocks and manual `private readonly` backing fields are prohibited.
@@ -159,7 +161,7 @@
   | Serilog sink | Add the sink package, then a named key under `appsettings.json` `WriteTo` | Logs |
   | OTLP (`--otel otlp`) | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` environment variables; backends without native OTLP intake go through an OpenTelemetry Collector | Logs, traces, metrics |
 
-  - A sink must be maintained by the vendor or the Serilog organization, and licensed MIT or Apache 2.0.
+  - A sink must be maintained by the vendor or the Serilog organization, and follow the Package Licensing rule.
   - Example — ELK: OTLP to Elastic's OTLP intake, `Elastic.Serilog.Sinks` straight to Elasticsearch, or File/Console collected by Filebeat/Logstash.
 - 🔗 **HTTP Client & Resilience**: Any outbound HTTP call to an external Web API **must** use a named/typed `HttpClient` registered via `AddHttpClient(...)` with **`Microsoft.Extensions.Http.Resilience`**. Call `.AddStandardResilienceHandler()` on every registration — this enables the built-in defense pipeline: Rate Limiting → Timeout → Retry → Circuit Breaker. Raw `HttpClient` instantiation (`new HttpClient()`) is strictly prohibited.
   ```csharp
