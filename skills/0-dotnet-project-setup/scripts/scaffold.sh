@@ -124,14 +124,42 @@ tfm_compatible() {
   return 1
 }
 
+# 0 when the package ships in lockstep with .NET (its major == the .NET major),
+# so it must stay on $TFM_MAJOR even when a newer major still supports $TFM.
+framework_versioned() {
+  case "$1" in
+    Microsoft.Extensions.*|Microsoft.AspNetCore.*|Microsoft.EntityFrameworkCore|Microsoft.EntityFrameworkCore.*|Npgsql.EntityFrameworkCore.PostgreSQL|dotnet-ef) return 0 ;;
+    # Serilog's hosting/config integrations track .NET majors and pull Microsoft.Extensions.* of the same major.
+    Serilog.AspNetCore|Serilog.Extensions.Hosting|Serilog.Extensions.Logging|Serilog.Settings.Configuration) return 0 ;;
+  esac
+  return 1
+}
+
+# Supply-chain safety: a version must be published at least 7 days ago (UTC, ISO-8601).
+MIN_AGE_CUTOFF="$(perl -MPOSIX -e 'print strftime("%Y-%m-%dT%H:%M:%S", gmtime(time - 7*86400))')"
+
+# 0 when version $2 of package $1 (lowercase) is listed and older than $MIN_AGE_CUTOFF.
+# Unlisted versions carry a placeholder 1900 publish date, so they are rejected first.
+release_old_enough() {
+  local leaf pub
+  leaf="$(curl -s --compressed "https://api.nuget.org/v3/registration5-gz-semver2/$1/$2.json" 2>/dev/null || true)"
+  grep -q '"listed":false' <<< "$leaf" && return 1
+  pub="$(grep -oE '"published":"[0-9T:-]{19}' <<< "$leaf" | cut -d'"' -f4 || true)"
+  [[ -n "$pub" && "$pub" < "$MIN_AGE_CUTOFF" ]]
+}
+
 # Latest STABLE version usable by $TFM — prerelease (any "-suffix", e.g.
 # 11.0.0-rc.3) is excluded, and so is a version that only targets a newer .NET
-# (e.g. net11.0-only on a net10.0 project). NuGet may serve CRLF line endings.
+# (e.g. net11.0-only on a net10.0 project) or was published less than 7 days ago.
+# Framework-versioned packages are also limited to $TFM_MAJOR (e.g. 10.x on
+# net10.0, never 11.x). NuGet may serve CRLF line endings.
 latest_stable() {
   local pkg_lc ver tfms; pkg_lc="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
   for ver in $(curl -s "https://api.nuget.org/v3-flatcontainer/$pkg_lc/index.json" 2>/dev/null \
       | sed -E 's/.*\[//; s/\].*//' | tr ',' '\n' | tr -d '" \r\t' \
       | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -uVr || true); do
+    if framework_versioned "$1" && [[ "${ver%%.*}" != "$TFM_MAJOR" ]]; then continue; fi
+    release_old_enough "$pkg_lc" "$ver" || continue
     tfms="$(curl -s "https://api.nuget.org/v3-flatcontainer/$pkg_lc/$ver/$pkg_lc.nuspec" 2>/dev/null \
       | grep -oE 'targetFramework="[^"]*"' | cut -d'"' -f2 | tr '[:upper:]' '[:lower:]' | sort -u || true)"
     tfm_compatible "$tfms" && { echo "$ver"; return 0; }
