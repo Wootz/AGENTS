@@ -11,3 +11,4 @@ skills/*
 !skills/0-generate-spec
 !skills/0-package-compliance
 !skills/0-spa-backend-single-site
+__pycache__/

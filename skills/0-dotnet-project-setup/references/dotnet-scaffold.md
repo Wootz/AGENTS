@@ -297,7 +297,7 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
 ```xml
 <Project>
   <ItemGroup>
-    <!-- Logging -->
+    <!-- 日誌 -->
     <PackageVersion Include="Serilog.AspNetCore"                             Version="LATEST_STABLE" />
     <PackageVersion Include="Serilog.Settings.Configuration"                 Version="LATEST_STABLE" />
     <PackageVersion Include="Serilog.Sinks.Console"                          Version="LATEST_STABLE" />
@@ -306,54 +306,54 @@ dotnet add src/<ProjectName>.Infrastructure/ package Microsoft.Extensions.Http.R
     <PackageVersion Include="Serilog.Enrichers.Process"                      Version="LATEST_STABLE" />
     <PackageVersion Include="Serilog.Enrichers.Thread"                       Version="LATEST_STABLE" />
 
-    <!-- HTTP Client Resilience: required for any outbound HTTP call to external APIs -->
+    <!-- HTTP Client Resilience：所有呼叫外部 API 的 HTTP 請求都必須使用 -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience"           Version="LATEST_STABLE" />
 
-    <!-- OpenTelemetry: only when the otlp option is chosen (logs + traces + metrics over OTLP) -->
+    <!-- OpenTelemetry：僅在選擇 otlp 時加入（logs + traces + metrics 經 OTLP 輸出） -->
     <!-- <PackageVersion Include="OpenTelemetry.Extensions.Hosting"               Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore"       Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="OpenTelemetry.Instrumentation.Http"             Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol"   Version="LATEST_STABLE" /> -->
 
-    <!-- API Documentation: Microsoft OpenAPI + Scalar UI (NO Swashbuckle) -->
+    <!-- API 文件：Microsoft OpenAPI + Scalar UI（不使用 Swashbuckle） -->
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi"                   Version="LATEST_STABLE" />
     <PackageVersion Include="Scalar.AspNetCore"                              Version="LATEST_STABLE" />
 
-    <!-- Validation -->
+    <!-- 驗證 -->
     <PackageVersion Include="FluentValidation"                               Version="LATEST_STABLE" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="LATEST_STABLE" />
 
-    <!-- Caching: HybridCache is NOT built into the shared framework. If caching is    -->
-    <!-- required, add Microsoft.Extensions.Caching.Hybrid and call AddHybridCache().   -->
+    <!-- 快取：HybridCache 不在 shared framework 內。確定需要快取時，          -->
+    <!-- 加入 Microsoft.Extensions.Caching.Hybrid 並呼叫 AddHybridCache()。       -->
     <!-- <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="LATEST_STABLE" /> -->
 
-    <!-- Data Access: EF Core — Persistence needs base + Relational (config APIs + migrations) -->
+    <!-- 資料存取：EF Core——Persistence 需要 base + Relational（設定 API + migrations） -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore"                  Version="LATEST_STABLE" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational"       Version="LATEST_STABLE" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design"           Version="LATEST_STABLE" />
-    <!-- DB Provider: referenced by BOTH the entry-point project (owns DI registration) AND Persistence
-         (dotnet ef emits provider-specific annotations there; omitting it fails with CS0246).
-         Add the chosen provider after asking the user: -->
+    <!-- DB Provider：入口專案（負責 DI 註冊）與 Persistence 都要參考
+         （dotnet ef 會在 Persistence 產生 provider 專屬的 annotation，缺少會出現 CS0246）。
+         詢問使用者後加入選定的 provider： -->
     <!-- <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer"    Version="LATEST_STABLE" /> -->
     <!-- <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL"      Version="LATEST_STABLE" /> -->
 
-    <!-- DI Abstractions: required by Application/Cqrs/CQRS.cs (IServiceCollection, IServiceProvider) -->
+    <!-- DI Abstractions：Application/Cqrs/CQRS.cs 需要（IServiceCollection、IServiceProvider） -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="LATEST_STABLE" />
 
-    <!-- Data Access: Dapper — complex/reporting queries in Persistence project -->
+    <!-- 資料存取：Dapper——Persistence 專案中的複雜查詢與報表查詢 -->
     <PackageVersion Include="Dapper"                                         Version="LATEST_STABLE" />
 
-    <!-- Object Mapping: Mapperly, fixed (AutoMapper is FORBIDDEN)                       -->
-    <!-- Mappers live in Application/Mappers/ and are referenced from Application only   -->
-    <!-- IMPORTANT: Mapperly is a source generator. When adding to Application.csproj,   -->
-    <!--   use PrivateAssets="all" so it does not leak as a transitive runtime dep:       -->
+    <!-- 物件對應：固定使用 Mapperly（禁止 AutoMapper）                                -->
+    <!-- Mapper 放在 Application/Mappers/，只由 Application 參考                          -->
+    <!-- 重要：Mapperly 是 source generator。加入 Application.csproj 時                    -->
+    <!--   要設 PrivateAssets="all"，避免它成為傳遞的執行期相依：                          -->
     <!--   dotnet add src/<ProjectName>.Application/ package Riok.Mapperly                -->
-    <!--   Then in Application.csproj, the PackageReference must have:                   -->
+    <!--   接著 Application.csproj 的 PackageReference 必須包含：                          -->
     <!--     <IncludeAssets>compile; runtime; build; native; contentfiles; analyzers</IncludeAssets> -->
     <!--     <PrivateAssets>all</PrivateAssets>                                           -->
     <PackageVersion Include="Riok.Mapperly"                                  Version="LATEST_STABLE" />
 
-    <!-- Testing: xUnit + NSubstitute -->
+    <!-- 測試：xUnit + NSubstitute -->
     <PackageVersion Include="xunit"                                          Version="LATEST_STABLE" />
     <PackageVersion Include="xunit.runner.visualstudio"                      Version="LATEST_STABLE" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"                         Version="LATEST_STABLE" />
@@ -375,8 +375,8 @@ using Serilog;
 using Serilog.Events;
 using Scalar.AspNetCore;
 
-// Bootstrap logger: captures startup errors before full Serilog config loads.
-// Replaced by ReadFrom.Configuration() once the host is built.
+// Bootstrap logger：在完整 Serilog 設定載入前捕捉啟動錯誤。
+// host 建立後由 ReadFrom.Configuration() 取代。
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
     .Enrich.FromLogContext()
@@ -387,13 +387,13 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // Logging — full config (sinks, enrichers, levels) read from appsettings.json
+    // 日誌——完整設定（sinks、enrichers、levels）讀取自 appsettings.json
     builder.Host.UseSerilog((ctx, services, lc) => lc
         .ReadFrom.Configuration(ctx.Configuration)
-        .ReadFrom.Services(services));  // allows ILogger sinks resolved from DI
+        .ReadFrom.Services(services));  // 允許使用由 DI 解析的 ILogger sink
 
-    // Tracing without OpenTelemetry: lets the project's own ActivitySources create
-    // activities so background work carries a TraceId. Remove when OpenTelemetry is added.
+    // 未啟用 OpenTelemetry 時的追蹤：讓專案自己的 ActivitySource 能建立 activity，
+    // 背景工作才會帶有 TraceId。加入 OpenTelemetry 後移除。
     using var activityListener = new ActivityListener
     {
         ShouldListenTo = source => source.Name.StartsWith("<ProjectName>.", StringComparison.Ordinal),
@@ -401,18 +401,18 @@ try
     };
     ActivitySource.AddActivityListener(activityListener);
 
-    // OpenAPI (Microsoft.AspNetCore.OpenApi + Scalar UI)
+    // OpenAPI（Microsoft.AspNetCore.OpenApi + Scalar UI）
     builder.Services.AddOpenApi();
 
-    // Caching: register HybridCache only if the project has confirmed caching needs.
+    // 快取：僅在專案確認需要快取時註冊 HybridCache。
     // builder.Services.AddHybridCache();
 
-    // Validation (FluentValidation — validators defined in Application project)
+    // 驗證（FluentValidation——validator 定義於 Application 專案）
     // builder.Services.AddValidatorsFromAssembly(typeof(SomeValidator).Assembly);
-    // Note: endpoint request validation is invoked manually via IValidator<T>.ValidateAndThrowAsync().
+    // 注意：endpoint 的 request 驗證以 IValidator<T>.ValidateAndThrowAsync() 手動呼叫。
 
     // TODO: builder.Services.AddCqrs(typeof(SomeHandler).Assembly);
-    // TODO: builder.Services.AddPersistence(builder.Configuration); // registers WriteDbContext (Write) + ReadDbContext (Read)
+    // TODO: builder.Services.AddPersistence(builder.Configuration); // 註冊 WriteDbContext（寫入）+ ReadDbContext（讀取）
     // TODO: builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
@@ -420,11 +420,11 @@ try
     if (app.Environment.IsDevelopment())
     {
         app.MapOpenApi();
-        app.MapScalarApiReference(); // Scalar UI default path: /scalar/v1
+        app.MapScalarApiReference(); // Scalar UI 預設路徑：/scalar/v1
     }
 
-    // Serilog request logging — replaces default ASP.NET Core request logs with
-    // a single structured log entry per request (includes status code, elapsed ms).
+    // Serilog request logging——以每個 request 一筆結構化日誌（含狀態碼、耗時 ms）
+    // 取代 ASP.NET Core 預設的 request 日誌。
     app.UseSerilogRequestLogging(options =>
     {
         options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
@@ -432,7 +432,7 @@ try
 
     app.UseHttpsRedirection();
 
-    // TODO: map endpoint groups here
+    // TODO: 在此對應 endpoint group
 
     app.Run();
 }
@@ -446,10 +446,9 @@ finally
 }
 
 /// <summary>
-/// Exposes the top-level-statement entry point to the integration test project.
-/// REQUIRED: `WebApplicationFactory<Program>` cannot see the compiler-generated
-/// `Program` class otherwise — it is `internal`, and every integration test fails
-/// to compile. Do not delete.
+/// 將 top-level statement 的進入點公開給整合測試專案。
+/// 必要：否則 `WebApplicationFactory<Program>` 看不到編譯器產生的 `Program` 類別——
+/// 它是 `internal`，所有整合測試都會編譯失敗。請勿刪除。
 /// </summary>
 public partial class Program;
 ```
@@ -459,17 +458,17 @@ public partial class Program;
 Replace the `UseSerilog(...)` call and the whole `ActivityListener` block of the template above with the block below — the listener must go, because sampling takes the most permissive listener and it would override the OTel sampler. Add `using OpenTelemetry;` (for `UseOtlpExporter()`), `using OpenTelemetry.Metrics;`, `using OpenTelemetry.Resources;`, `using OpenTelemetry.Trace;` and drop `using System.Diagnostics;`.
 
 ```csharp
-    // Logging — Serilog stays the only entry point (Console/File sinks unchanged);
-    // writeToProviders forwards its events to the OTel logger provider.
-    // ClearProviders stops the default Console provider from printing every line twice.
+    // 日誌——Serilog 仍是唯一入口（Console/File sink 不變）；
+    // writeToProviders 會把事件轉送給 OTel logger provider。
+    // ClearProviders 避免預設的 Console provider 讓每行輸出兩次。
     builder.Logging.ClearProviders();
     builder.Host.UseSerilog((ctx, services, lc) => lc
         .ReadFrom.Configuration(ctx.Configuration)
         .ReadFrom.Services(services),
         writeToProviders: true);
 
-    // OpenTelemetry — logs + traces + metrics over OTLP.
-    // Backend chosen by OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL, never in code.
+    // OpenTelemetry——logs + traces + metrics 經 OTLP 輸出。
+    // 後端由 OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL 決定，不寫在程式碼裡。
     builder.Services.AddOpenTelemetry()
         .ConfigureResource(resource => resource.AddService(builder.Environment.ApplicationName))
         .WithTracing(tracing => tracing
@@ -534,7 +533,7 @@ internal static class ArticlesEndpoint
 
 Route mounting section in `Program.cs`:
 ```csharp
-// Map endpoints
+// 對應 endpoint
 app.MapArticlesEndpoints();
 ```
 
@@ -596,7 +595,7 @@ Create AI guidance as two layers:
 
 Root `AGENTS.md` should stay concise. Do not paste the entire global `~/.agents/AGENTS.md` or the full `.NET` rules into it. Include only:
 
-- Language rule: all AI responses use Traditional Chinese.
+- Language rule: all AI responses, documents and code comments use Traditional Chinese; agent-facing files (`AGENTS.md`, skills) stay in English.
 - Security and documentation alignment reminders.
 - Brownfield safety: scan before editing; no unsolicited refactors.
 - Package manager rule: `dotnet` for .NET, `pnpm` for frontend assets.
@@ -608,7 +607,7 @@ Recommended root `AGENTS.md` shape:
 ```markdown
 # Project Agent Instructions
 
-All AI responses must be in Traditional Chinese (正體中文).
+All AI responses, documents and code comments must be in Traditional Chinese (正體中文). Agent-facing files (`AGENTS.md`, skills) are in English.
 
 ## Required References
 
@@ -912,7 +911,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment(Environments.Development);
 
-        // NOT ConfigureAppConfiguration — appsettings.Development.json would win.
+        // 不要用 ConfigureAppConfiguration——appsettings.Development.json 會覆蓋這些值。
         builder.UseSetting("ConnectionStrings:Write", TestConnectionString);
         builder.UseSetting("ConnectionStrings:Read", TestConnectionString);
         builder.UseSetting("Jwt:SigningKey", TestSigningKey);
@@ -931,7 +930,7 @@ EF Core does not connect at startup, so a syntactically valid connection string 
 In production the container handles scope disposal, so this only surfaces where scopes are created by hand — integration tests and background/batch work:
 
 ```csharp
-await using var scope = factory.Services.CreateAsyncScope();   // not CreateScope()
+await using var scope = factory.Services.CreateAsyncScope();   // 不是 CreateScope()
 var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 ```
 

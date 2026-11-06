@@ -1,12 +1,12 @@
-# 文件模板
+# Document Templates
 
-三份文件各有明確用途，不要混在一起：
+The three documents each have a distinct purpose; keep them separate. Write them in Traditional Chinese (正體中文), as in the templates below.
 
-| 文件 | 回答的問題 | 客戶質疑時的作用 |
+| Document | Question it answers | Role when the client objects |
 | --- | --- | --- |
-| 設計稿存證 | 當時的設計稿長什麼樣？ | 設計師改稿後，證明實作依據的是哪一版 |
-| 設計稿矛盾清單 | 設計稿哪裡自相矛盾？ | 證明不是實作錯，是設計稿沒有單一答案 |
-| 畫面對照報告 | 改了什麼？現在長什麼樣？ | 讓使用者快速驗收 |
+| 設計稿存證 (design archive) | What did the design look like at the time? | After the designer revises, proves which version the implementation followed |
+| 設計稿矛盾清單 (contradiction list) | Where does the design contradict itself? | Proves the implementation is not wrong; the design has no single answer |
+| 畫面對照報告 (comparison report) | What changed, and what does it look like now? | Lets the user accept the work quickly |
 
 ---
 
@@ -36,8 +36,7 @@
 <為什麼不採用、依誰的指示>
 ```
 
-檔名規則：`<功能縮寫>-<序號>-<狀態>.png`，例如 `reg-02-form-empty.png`。
-狀態要能從檔名看出來，日後才找得到。
+File naming: `<feature abbreviation>-<number>-<state>.png`, e.g. `reg-02-form-empty.png`. The state must be readable from the file name so the image can be found later.
 
 ---
 
@@ -79,8 +78,7 @@
 - <未定的內容、連結、資產>
 ```
 
-**發現矛盾時先問使用者要用哪個**，不要自己選了才記錄。
-記錄的是「使用者的決定」，不是「你的判斷」。
+**When you find a contradiction, ask the user which to use first**, then record it. The record holds the user's decision, not your judgment.
 
 ---
 
@@ -126,13 +124,12 @@
 <未執行的驗證與原因>
 ```
 
-### 寫法要點
+### Writing notes
 
-**每張截圖都標「🖥️ 實際畫面」**。報告裡若只有實作截圖卻寫「對照 Figma xxx」，
-讀者會以為某幾張是設計稿。標清楚，並指向設計稿檔名。
+**Label every screenshot 「🖥️ 實際畫面」.** A report with only implementation screenshots captioned 「對照 Figma xxx」 makes readers think some of them are the design. Label clearly and point to the design file name.
 
-**修正表要有「設計稿」欄**。只寫「修正前→修正後」無法證明改對了。
+**The fix table needs a design column.** "Before → after" alone cannot prove the fix is right.
 
-**待確認項目要說明為什麼沒自己決定**，否則看起來像偷懶。
+**Explain why each open item was not decided by you**; otherwise it reads as skipping work.
 
-**驗證結果要放量測數字**，不要只寫「已對齊」。
+**Put measured numbers in the verification results**, not just 「已對齊」.

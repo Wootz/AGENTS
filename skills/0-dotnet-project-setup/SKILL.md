@@ -1,13 +1,13 @@
 ---
 name: 0-dotnet-project-setup
-description: Scaffold a complete .NET backend project from scratch using the repository's .NET conventions for Clean Architecture, CQRS (with an Anemic or DDD Rich domain model), Central Package Management, package selection, testing, and validation. Use this skill whenever the user wants to create or initialize a new .NET solution, ASP.NET Core API, C# backend service, Web API, microservice, or backend project skeleton, even if they only say "new API", "set up backend", "create .NET project", "scaffold service", or similar. This skill is only for new .NET backend codebases, not routine feature work in an existing app.
+description: Scaffold a complete .NET backend project from scratch using the repository's .NET conventions for Clean Architecture, CQRS (with an Anemic or DDD Rich domain model), Central Package Management, package selection, testing, and validation. Use this skill whenever the user wants to create or initialize a new .NET solution, ASP.NET Core API, C# backend service, Web API, microservice, or backend project skeleton, even if they only say "new API", "set up backend", "create .NET project", "scaffold service" (「建立 .NET 專案」「開新後端」「建一個 Web API」), or similar. This skill is only for new .NET backend codebases, not routine feature work in an existing app.
 ---
 
 # .NET Project Setup
 
 This skill walks through scaffolding a production-ready .NET backend project following **Clean Architecture + mandatory CQRS + mandatory read/write split** (with an Anemic or DDD Rich domain model), complying with the conventions in `AGENTS.md` and `dotnet-rules.md`.
 
-> **Language**: All questions asked to the user and all responses **must be in Traditional Chinese (正體中文)**. Code, file paths, and technical identifiers remain in English.
+> **Language**: All questions asked to the user and all responses **must be in Traditional Chinese (正體中文)**, and so are the code comments and human-facing documents this skill generates (README, docs). Agent-facing files it generates (`AGENTS.md`, `CLAUDE.md`), code, file paths, and technical identifiers remain in English.
 
 ## Step 0: Inspect Local Context
 
@@ -196,13 +196,13 @@ Execute the scaffold in this order:
    - Scaffold `Domain/Interfaces/IUnitOfWork.cs` using the persistence-agnostic `CommitAsync(CancellationToken)` contract from `dotnet-domain-template.cs`.
    - If Domain Events were enabled (Step 1 item 7): scaffold the following files — use the reference implementations in `dotnet-domain-template.cs` verbatim:
 
-     | 檔案 | 專案 | 說明 |
+     | File | Project | Description |
      |------|------|------|
-     | `Domain/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Domain` | 分派 domain events 的介面；IUnitOfWork 依賴此介面 |
-     | `Domain/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Domain` | 泛型 handler 介面 `IDomainEventHandler<TEvent>`；Application EventHandlers 實作此介面 |
-     | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | `IDomainEventDispatcher` 的 in-process 實作；透過 DI 解析並呼叫所有 `IDomainEventHandler<TEvent>` |
+     | `Domain/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Domain` | Interface that dispatches domain events; IUnitOfWork depends on it |
+     | `Domain/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Domain` | Generic handler interface `IDomainEventHandler<TEvent>`; Application EventHandlers implement it |
+     | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation of `IDomainEventDispatcher`; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
-     DI 註冊使用 assembly scanning（見 `dotnet-domain-template.cs` 的 DI registration 範例）。Application-layer event handlers 放在 `<ProjectName>.Application/EventHandlers/`，實作對應的 `IDomainEventHandler<TEvent>`。
+     DI registration uses assembly scanning (see the DI registration example in `dotnet-domain-template.cs`). Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement the matching `IDomainEventHandler<TEvent>`.
    - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>` and `Result` from `dotnet-domain-template.cs` into `Domain/Common/`.
 
    **Anemic Domain Model:**
@@ -213,15 +213,15 @@ Execute the scaffold in this order:
    - Do **not** create Domain Service stubs up front. Add a capability-named Domain Service in `Domain/DomainServices/` (e.g. `PricingService`) only for **cross-entity operations** or **high-complexity pure business calculations** that are shared by more than one handler — simple CRUD and single-use logic belong in Application handlers. They are pure logic: no repository and no `IDomainEventDispatcher` injection (both live in `Application`), and never Infrastructure/Persistence types — handlers load the data and pass it in; see the naming rule and dependency rules in `references/dotnet-rules.md` → **Domain Model Style / Domain Services**.
    - If Domain Events were enabled (Step 1 item 7): scaffold the following files — use the reference implementations in `dotnet-domain-template.cs` verbatim:
 
-     | 檔案 | 專案 | 說明 |
+     | File | Project | Description |
      |------|------|------|
      | `Domain/Events/IDomainEvent.cs` | `<ProjectName>.Domain` | Domain event marker interface |
      | `Domain/Events/DomainEvent.cs` | `<ProjectName>.Domain` | Domain event base record |
-     | `Application/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Application` | 分派 domain events 的介面 |
-     | `Application/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Application` | 泛型 handler 介面 `IDomainEventHandler<TEvent>` |
-     | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | in-process 實作；透過 DI 解析並呼叫所有 `IDomainEventHandler<TEvent>` |
+     | `Application/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Application` | Interface that dispatches domain events |
+     | `Application/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Application` | Generic handler interface `IDomainEventHandler<TEvent>` |
+     | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
-     Application handler 在 repository 操作完成且 use case commit 成功後手動呼叫 `DispatchAsync()`（Domain Service 不派送事件）。DI 註冊使用 assembly scanning。Application-layer event handlers 放在 `<ProjectName>.Application/EventHandlers/`，實作 `IDomainEventHandler<TEvent>`.
+     Application handlers call `DispatchAsync()` manually after the repository operations finish and the use case commits successfully (Domain Services never dispatch events). DI registration uses assembly scanning. Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement `IDomainEventHandler<TEvent>`.
    - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>` and `Result` from `dotnet-domain-template.cs` into `Domain/Common/`.
 
    **Both models:**

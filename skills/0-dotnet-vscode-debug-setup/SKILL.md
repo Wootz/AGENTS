@@ -1,41 +1,43 @@
 ---
 name: 0-dotnet-vscode-debug-setup
-description: 建立 ASP.NET Core + 前端 SPA 專案的 VS Code 偵錯設定（launch.json 與 tasks.json），提供「單站台模式」與「前後端同時啟動」兩個選項，後端 C# 可下中斷點並在啟動後自動開瀏覽器。當使用者提到「設定 VS Code debug」「launch.json」「tasks.json」「按 F5 啟動」「要能下中斷點」「一鍵啟動前後端」，或抱怨中斷點沒作用、F5 啟動失敗、偵錯清單選項太多或名稱看不懂、啟動後沒有自動開瀏覽器、偵錯讀不到 appsettings.Development.json 時，務必使用此技能。使用者若只說「幫我設定偵錯」或「弄一個 F5 就能跑的設定」也應該觸發。
+description: Create VS Code debug settings (launch.json and tasks.json) for an ASP.NET Core + frontend SPA project, with two options — single-site mode and frontend + backend together — where backend C# breakpoints work and a browser opens after startup. Use it whenever the user mentions setting up VS Code debugging, launch.json, tasks.json, F5 startup, breakpoints, or starting frontend and backend together (「設定 VS Code debug」「按 F5 啟動」「要能下中斷點」「一鍵啟動前後端」「幫我設定偵錯」「弄一個 F5 就能跑的設定」), or complains that breakpoints do nothing, F5 fails, the debug list has too many or unclear entries, no browser opens after startup, or debugging cannot read appsettings.Development.json.
 ---
 
-# .NET + 前端 SPA 的 VS Code 偵錯設定
+# VS Code Debug Settings for .NET + Frontend SPA
 
-建立兩種啟動方式：單獨啟動後端（單一站台，前端已建置進 wwwroot），以及前後端同時啟動（前端走 dev server 保有 HMR）。兩種模式下後端 C# 都能下中斷點。
+Create two launch modes: the backend alone (single site, frontend already built into wwwroot), and frontend + backend together (frontend on its dev server, keeping HMR). In both modes backend C# breakpoints work.
 
-## 核心觀念：中斷點靠的是 coreclr，不是 shell task
+The generated `launch.json` / `tasks.json` comments and configuration names are in Traditional Chinese (正體中文), as in the templates below.
 
-最常見的錯誤，是用 `tasks.json` 裡的 shell task 跑 `dotnet run` 來啟動後端，再用 `chrome` 型別的 launch 設定開瀏覽器。這樣前端 TypeScript 能下中斷點，但**後端 C# 不行**——因為 .NET 偵錯器根本沒附加上去。
+## Core idea: breakpoints come from coreclr, not a shell task
 
-要讓 C# 能下中斷點，後端必須由 `"type": "coreclr"` 的 launch 設定啟動，指向 Debug 建置的 dll。Release 建置的最佳化會讓中斷點錯位或失效，所以務必用 Debug。
+The most common mistake is starting the backend with a shell task in `tasks.json` that runs `dotnet run`, plus a `chrome` launch configuration for the browser. Frontend TypeScript breakpoints then work, but **backend C# breakpoints do not** — the .NET debugger was never attached.
 
-前後端要一起跑，就用 `compounds` 把後端的 coreclr 設定與前端的 chrome 設定組合起來，而不是把後端塞進 preLaunchTask。
+For C# breakpoints, the backend must be started by a `"type": "coreclr"` launch configuration pointing at the Debug-build dll. Release-build optimizations shift or disable breakpoints, so always use Debug.
 
-## 步驟一：偵查專案結構
+To run frontend and backend together, combine the backend coreclr configuration and the frontend chrome configuration with `compounds`, rather than pushing the backend into a preLaunchTask.
+
+## Step 1: Inspect the project
 
 ```bash
-# WebApi 專案路徑與組件名稱（決定 dll 路徑）
+# WebApi project path and assembly name (determine the dll path)
 find . -name "*.csproj" -path "*WebApi*" -not -path "*/obj/*"
 
-# TargetFramework（決定 bin/Debug/<tfm>/ 的 tfm 值）
+# TargetFramework (the <tfm> in bin/Debug/<tfm>/)
 grep -h "TargetFramework" **/Directory.Build.props **/*WebApi*.csproj 2>/dev/null
 
-# 後端埠號
-cat <WebApi 專案>/Properties/launchSettings.json
+# Backend port
+cat <WebApi project>/Properties/launchSettings.json
 
-# 前端 dev server 埠號與套件管理器
+# Frontend dev server port and package manager
 cat frontend/vite.config.ts; ls frontend/pnpm-lock.yaml frontend/package-lock.json frontend/yarn.lock 2>/dev/null
 ```
 
-dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜錯的話 F5 會直接失敗，所以務必用實際查到的值。
+The dll path is `<project dir>/bin/Debug/<TargetFramework>/<assembly name>.dll`. A wrong guess makes F5 fail immediately, so use the values you actually found.
 
-## 步驟二：tasks.json
+## Step 2: tasks.json
 
-三個 task。注意 `build` 用 `"type": "process"`（VS Code 對 .NET 的標準寫法），前端相關的用 `"type": "shell"`。
+Three tasks. `build` uses `"type": "process"` (VS Code's standard form for .NET); the frontend tasks use `"type": "shell"`.
 
 ```jsonc
 {
@@ -50,7 +52,7 @@ dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/<WebApi 專案路徑>.csproj",
+        "${workspaceFolder}/<WebApi project path>.csproj",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary"
       ],
@@ -63,7 +65,7 @@ dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜
       // --emptyOutDir 讓 Vite 願意寫入專案外的目錄並清掉舊產物。
       "label": "build-frontend-to-wwwroot",
       "type": "shell",
-      "command": "pnpm exec vite build --outDir ../<WebApi 專案目錄>/wwwroot --emptyOutDir",
+      "command": "pnpm exec vite build --outDir ../<WebApi project dir>/wwwroot --emptyOutDir",
       "options": { "cwd": "${workspaceFolder}/frontend" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared", "group": "servers" }
@@ -89,11 +91,11 @@ dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜
 }
 ```
 
-**前端建置不要用 `pnpm build`。** 多數 Vite 專案的 `package.json` 裡 build 是 `vue-tsc -b && vite build`（或 `tsc && vite build`），附加的 `--outDir` 參數會被前段的型別檢查工具接走而完全失效——建置會成功，但檔案還是輸出到 `dist/`，看起來像設定沒生效卻找不到原因。直接呼叫 `vite` 可以避開這點，代價是跳過型別檢查（偵錯情境下反而啟動更快，正式 publish 仍走完整流程）。
+**Do not build the frontend with `pnpm build`.** In most Vite projects `package.json` defines build as `vue-tsc -b && vite build` (or `tsc && vite build`); an appended `--outDir` is swallowed by the type-check tool in front and has no effect — the build succeeds but still writes to `dist/`, which looks like the setting is ignored for no reason. Calling `vite` directly avoids this at the cost of skipping type checking (which makes debug startup faster; the real publish still runs the full pipeline).
 
-`isBackground` 的 `endsPattern` 要對得上 dev server 的實際輸出，否則 VS Code 會一直等下去。
+The `endsPattern` of an `isBackground` task must match the dev server's real output, or VS Code waits forever.
 
-## 步驟三：launch.json
+## Step 3: launch.json
 
 ```jsonc
 {
@@ -107,9 +109,9 @@ dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
-      "program": "${workspaceFolder}/<WebApi 專案目錄>/bin/Debug/<tfm>/<組件名>.dll",
+      "program": "${workspaceFolder}/<WebApi project dir>/bin/Debug/<tfm>/<assembly name>.dll",
       "args": [],
-      "cwd": "${workspaceFolder}/<WebApi 專案目錄>",
+      "cwd": "${workspaceFolder}/<WebApi project dir>",
       "stopAtEntry": false,
       // 啟動後自動開啟瀏覽器（pattern 的選擇見下方說明）。
       "serverReadyAction": {
@@ -145,17 +147,17 @@ dll 路徑是 `<專案目錄>/bin/Debug/<TargetFramework>/<組件名>.dll`，猜
 }
 ```
 
-## 讓偵錯清單只出現該出現的選項
+## Show only the entries that belong in the debug list
 
-VS Code 會把每個 configuration 與 compound 都列進啟動清單，所以上面這份設定預設會顯示三個選項——但「前端偵錯」只是 compound 的組成零件，單獨啟動沒有意義（後端沒起來）。
+VS Code lists every configuration and compound in the launch list, so the settings above would show three entries by default — but the frontend-debug configuration is only a building block of the compound; starting it alone is pointless (no backend).
 
-用 `"presentation": { "hidden": true }` 把它從清單移除，它仍然照常作為 compound 的一部分運作。使用者看到的就只剩兩個有意義的選項。
+`"presentation": { "hidden": true }` removes it from the list while it still works inside the compound. The user sees only the two meaningful options.
 
-命名也值得花點心思：`.NET 後端偵錯 (WebApi)` 這種以技術命名的方式，使用者得自己推敲差別在哪。改成以**使用情境**命名更直覺，例如「單站台模式 (前後端同源)」與「開發模式 (前端 HMR + 後端)」，一眼就知道該選哪個。
+Naming matters too: a technical name like `.NET 後端偵錯 (WebApi)` makes the user work out the difference. Name by **use case** instead, e.g. 「單站台模式 (前後端同源)」 and 「開發模式 (前端 HMR + 後端)」, so the right choice is obvious at a glance.
 
-## serverReadyAction：注意 log 等級可能吃掉比對訊息
+## serverReadyAction: the log level may swallow the matched message
 
-`serverReadyAction` 讓後端啟動後自動開瀏覽器，靠的是**比對主控台輸出**。預設寫法比對 Kestrel 的 `Now listening on:`：
+`serverReadyAction` opens the browser after the backend starts by **matching console output**. The default pattern matches Kestrel's `Now listening on:`:
 
 ```jsonc
 "serverReadyAction": {
@@ -165,21 +167,21 @@ VS Code 會把每個 configuration 與 compound 都列進啟動清單，所以�
 }
 ```
 
-**但這個訊息在很多專案裡根本不會出現。** 它是 `Microsoft.Hosting.Lifetime` 發出的 Information 等級訊息，而 Serilog／預設 logging 設定常見這樣的覆寫：
+**In many projects this message never appears.** It is an Information-level message from `Microsoft.Hosting.Lifetime`, and Serilog / default logging setups often override it like this:
 
 ```json
 "MinimumLevel": { "Override": { "Microsoft": "Warning" } }
 ```
 
-一旦 `Microsoft` 被壓到 Warning，該訊息就被濾掉，pattern 永遠不會命中——瀏覽器靜默地不開，而且看不出任何錯誤，很容易誤以為是 `serverReadyAction` 不支援。
+Once `Microsoft` is raised to Warning, the message is filtered out and the pattern never matches — the browser silently stays closed with no visible error, which is easy to mistake for `serverReadyAction` not being supported.
 
-所以設定前先確認訊息是否真的存在：
+So confirm the message really exists before configuring it:
 
 ```bash
-grep -n "MinimumLevel" -A5 <WebApi 專案目錄>/appsettings.json
+grep -n "MinimumLevel" -A5 <WebApi project dir>/appsettings.json
 ```
 
-若 `Microsoft` 被覆寫為 Warning 以上，改比對一個該專案確定會輸出的啟動訊息（例如自訂 HostedService 的啟動 log），並用 `uriFormat` 直接指定固定網址：
+If `Microsoft` is overridden to Warning or higher, match a startup message the project is sure to log (e.g. a custom HostedService's startup log) and give a fixed URL in `uriFormat`:
 
 ```jsonc
 "serverReadyAction": {
@@ -189,41 +191,41 @@ grep -n "MinimumLevel" -A5 <WebApi 專案目錄>/appsettings.json
 }
 ```
 
-用 HostedService 的訊息要留意時序：它可能在 Kestrel 綁定埠之前就發出，瀏覽器開太早會連線被拒。實測確認即可——啟動後端並在偵測到該訊息時立刻打 health 端點，看是否已可連線。多數情況下兩者幾乎同時，不成問題。
+Mind the timing with a HostedService message: it may be logged before Kestrel binds the port, so the browser could open too early and get connection refused. Verify by starting the backend and hitting a health endpoint the moment the message appears. In most cases the two happen almost together and it is not a problem.
 
-**`cwd` 必須指向專案目錄**，不能指向 publish 輸出目錄。ASP.NET Core 從執行目錄尋找 `appsettings.*.json`，而 `appsettings.Development.json` 通常只存在於專案目錄（publish 時常被刻意排除）。指錯的話設定會落回 `appsettings.json` 的預設值，症狀是連到錯誤的服務位址、一直重試失敗，但看起來又不像設定問題。
+**`cwd` must point at the project directory**, not the publish output. ASP.NET Core looks for `appsettings.*.json` in the working directory, and `appsettings.Development.json` usually exists only in the project directory (publish often excludes it on purpose). Pointing elsewhere falls back to `appsettings.json` defaults; the symptom is connecting to the wrong service address and retrying endlessly, which does not look like a settings problem.
 
-`stopAll: true` 讓停止其中一個偵錯工作階段時另一個也一起停，避免殘留程序佔著埠。
+`stopAll: true` stops the other debug session when one stops, so no leftover process holds the port.
 
-## 步驟四：收尾與驗證
+## Step 4: Wrap-up and verification
 
-把前端建置產物加進 `.gitignore`：
+Add the frontend build output to `.gitignore`:
 
 ```
-<WebApi 專案目錄>/wwwroot/
+<WebApi project dir>/wwwroot/
 ```
 
-不需要 `.gitkeep`——`build` task 會透過 `dependsOn` 自動建立該目錄。
+No `.gitkeep` is needed — the `build` task creates the directory through `dependsOn`.
 
-驗證方式（模擬偵錯器的實際啟動方式，用一個沒被佔用的埠）：
+Verify (mimicking how the debugger starts it, on a free port):
 
 ```bash
-dotnet build <WebApi 專案>.csproj
-cd <WebApi 專案目錄>
+dotnet build <WebApi project>.csproj
+cd <WebApi project dir>
 ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5299 \
-  dotnet bin/Debug/<tfm>/<組件名>.dll
+  dotnet bin/Debug/<tfm>/<assembly name>.dll
 ```
 
-確認：前端畫面能開（`/` 回 200 text/html）、深層路由能開、以及讀得到 `appsettings.Development.json` 裡的設定（挑一個會反映該設定的端點打打看）。
+Confirm: the frontend opens (`/` returns 200 text/html), deep routes open, and settings from `appsettings.Development.json` are read (hit an endpoint that reflects one of them).
 
-## 埠號衝突：最常見的 F5 失敗原因
+## Port conflicts: the most common F5 failure
 
-`Failed to bind to address ... address already in use` 幾乎都是舊程序沒關，而不是設定壞掉。這在切換啟動方式時特別容易發生（例如先前用 `dotnet run` 或跑過 publish 版站台，那些程序不會因為改了設定就消失）。
+`Failed to bind to address ... address already in use` almost always means an old process is still running, not broken settings. It happens especially when switching launch styles (processes from an earlier `dotnet run` or a published site do not disappear because the settings changed).
 
 ```bash
-lsof -nP -iTCP:<埠號> -sTCP:LISTEN    # 找出佔用者
-ps -p <PID> -o pid,lstart,command      # 確認身分再動手，避免關錯
+lsof -nP -iTCP:<port> -sTCP:LISTEN    # find the owner
+ps -p <PID> -o pid,lstart,command      # confirm what it is before killing
 kill <PID>
 ```
 
-先確認再關。使用者機器上可能同時跑著其他專案的服務。
+Confirm before killing: the user's machine may be running services from other projects.

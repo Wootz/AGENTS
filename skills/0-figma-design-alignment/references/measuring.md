@@ -1,61 +1,58 @@
-# 量測方法
+# Measuring
 
-## 為什麼要量
+## Why measure
 
-肉眼對 10–20px 的差異幾乎無感，但客戶把設計稿和畫面並排看就會發現。
-更麻煩的是**一致的錯誤**——整批元件都放大 1.5 倍時，畫面內部比例仍然協調，
-看起來完全正常，只有量測才抓得到。
+The eye barely registers 10–20px differences, but the client spots them with the design and the screen side by side. Worse is a **consistent error** — when every element is 1.5× too big, internal proportions still look balanced and the screen seems entirely normal; only measurement catches it.
 
-## 步驟一：判定畫布倍率
+## Step 1: Determine the canvas scale
 
-設計師常在放大的畫布上作業。動手量之前先確定倍率，否則後面全錯。
+Designers often work on an enlarged canvas. Settle the scale before measuring, or everything after is wrong.
 
-**方法：量一個已知寬度的元件回推。**
+**Method: measure an element of known width and work back.**
 
-| 已知來源 | 說明 |
+| Known source | Notes |
 | --- | --- |
-| Figma API 讀出的值 | 最可靠。`get_figma_data` 的 `dimensions.width` 是實際值 |
-| 既有正確實作 | 該元件已對齊過，量瀏覽器實際渲染值 |
-| 裝置寬度 | 手機框 390/393/414；設計稿常見 585(=390×1.5)、780(=390×2) |
+| Value from the Figma API | Most reliable. `dimensions.width` from `get_figma_data` is the real value |
+| An existing correct implementation | The element is already aligned; measure its rendered value in the browser |
+| Device width | Phone frames 390/393/414; designs commonly 585 (=390×1.5) or 780 (=390×2) |
 
 ```
-設計稿量到 525px，已知實際應為 350px → 倍率 = 525 / 350 = 1.5
+Design measures 525px, known real value 350px → scale = 525 / 350 = 1.5
 ```
 
-**驗算**：再量第二個元件確認同樣倍率。兩個都吻合才算確定。
+**Cross-check**: measure a second element to confirm the same scale. Only two matches make it certain.
 
-算出後告訴使用者依據，例如：
-> 這份稿的白卡量到 525px，Figma API 顯示應為 350px，推算畫布是 1.5×。
-> 後續所有量到的值我都會除以 1.5。
+Then tell the user the basis, e.g.:
+> 這份稿的白卡量到 525px，Figma API 顯示應為 350px，推算畫布是 1.5×。後續所有量到的值我都會除以 1.5。
 
-同一批稿可能混用倍率——手機表單 1.5×、桌機頁 1×——**逐份判定**。
+One set may mix scales — phone forms 1.5×, desktop pages 1× — so **determine it per file**.
 
-## 步驟二：掃描設計稿
+## Step 2: Scan the design
 
-用 `scripts/measure_design.py`：
+Use `scripts/measure_design.py`:
 
 ```bash
-# 找容器外框（白卡）——內部有輸入框等不同色元件時要加 --outer
-python3 scripts/measure_design.py 稿.png --scan-y 400 --mode light --outer --scale 1.5
+# Container outline (white card) — add --outer when it holds differently colored elements such as inputs
+python3 scripts/measure_design.py design.png --scan-y 400 --mode light --outer --scale 1.5
 
-# 找一列多個元件（三個按鈕、六個驗證碼格）——會分別列出並算間隔
-python3 scripts/measure_design.py 稿.png --scan-y 640 --mode mid --scale 1.5
+# A row of elements (three buttons, six OTP boxes) — lists each one and the gaps
+python3 scripts/measure_design.py design.png --scan-y 640 --mode mid --scale 1.5
 
-# 不確定元件在哪條線上時，掃一段
-python3 scripts/measure_design.py 稿.png --scan-range 300 360 --mode mid
+# Unsure which line crosses the element: scan a band
+python3 scripts/measure_design.py design.png --scan-range 300 360 --mode mid
 ```
 
-| 參數 | 用途 |
+| Option | Purpose |
 | --- | --- |
-| `--mode light` | 近白區塊（白卡、彈窗底） |
-| `--mode mid` | 淺灰元件（輸入框、驗證碼格）——找表單元件最常用 |
-| `--mode dark` | 深色元素（文字、深色按鈕） |
-| `--outer` | 只取最外緣。**找容器一定要加**——卡片內部的輸入框會把區段切斷，不加會只量到圓角 |
-| `--scale` | 畫布倍率，設定後同時輸出換算值 |
+| `--mode light` | Near-white areas (white cards, dialog backgrounds) |
+| `--mode mid` | Light-gray elements (inputs, OTP boxes) — the usual choice for form elements |
+| `--mode dark` | Dark elements (text, dark buttons) |
+| `--outer` | Outer edges only. **Always use it for containers** — inputs inside a card split the segment, and without it you measure only the rounded corner |
+| `--scale` | Canvas scale; when set, scaled values are printed too |
 
-輸出含每個區段的**中心點**與**間隔**，用來判斷對齊方式與 gap。
+The output includes each segment's **center** and the **gaps**, used to judge alignment and gap.
 
-也可以直接寫幾行 PIL：
+A few lines of PIL also work:
 
 ```python
 from PIL import Image
@@ -63,21 +60,18 @@ im = Image.open('figma/reg-02-form-empty.png').convert('RGB')
 w, h = im.size
 px = im.load()
 
-y = 400  # 穿過白卡的橫線
+y = 400  # a line crossing the white card
 xs = [x for x in range(w) if all(c > 250 for c in px[x, y])]
-print('卡片', xs[0], xs[-1], '寬', xs[-1] - xs[0] + 1)
+print('card', xs[0], xs[-1], 'width', xs[-1] - xs[0] + 1)
 ```
 
-**求內距**：量外框與內部元件的差。
-`(卡片寬 − 內部元件寬) / 2`，例如 `(436 − 372) / 2 = 32`。
+**Padding**: the difference between the outline and the inner element: `(card width − inner width) / 2`, e.g. `(436 − 372) / 2 = 32`.
 
-**求對齊方式**：比中心點。若文字中心 ≈ 某元件中心，是置中對齊該元件；
-若文字靠容器左緣，才是 `justify-between`。這個差別目測看不出來。
+**Alignment**: compare centers. If the text center ≈ an element's center, it is centered on that element; only if the text hugs the container's left edge is it `justify-between`. The eye cannot tell these apart.
 
-## 步驟三：驗證實作結果
+## Step 3: Verify the implementation
 
-改完之後用 Playwright 量實際渲染值。視窗尺寸要對應設計稿
-（手機 390×844、桌機依畫布寬）。
+After the change, measure rendered values with Playwright, with the viewport matching the design (phone 390×844, desktop per canvas width).
 
 ```javascript
 () => {
@@ -85,11 +79,11 @@ print('卡片', xs[0], xs[-1], '寬', xs[-1] - xs[0] + 1)
   const inner = document.querySelector('INNER_SELECTOR');
   const c = card.getBoundingClientRect();
   const i = inner.getBoundingClientRect();
-  const SCALE = 1.5;  // 設計稿倍率
+  const SCALE = 1.5;  // design canvas scale
   return {
     viewport: window.innerWidth,
     cardWidth: Math.round(c.width),
-    designWidth: Math.round(525 / SCALE),      // 設計稿量到的值 ÷ 倍率
+    designWidth: Math.round(525 / SCALE),      // measured design value ÷ scale
     innerPad: Math.round(i.left - c.left),
     designPad: Math.round(32 / SCALE),
     innerCentre: Math.round((i.left + i.right) / 2),
@@ -98,39 +92,36 @@ print('卡片', xs[0], xs[-1], '寬', xs[-1] - xs[0] + 1)
 }
 ```
 
-差 1px 可接受（四捨五入）；差 5px 以上要查原因。
+1px off is acceptable (rounding); 5px or more needs investigating.
 
-## 需要量的項目
+## What to measure
 
-只量寬度不夠。逐項對照：
+Width alone is not enough. Compare item by item:
 
-| 類別 | 要量／要比的 |
+| Category | Measure / compare |
 | --- | --- |
-| 尺寸 | 容器寬高、內距、外距、元件間距（gap） |
-| 對齊 | 中心點、左右緣、是置中還是兩端對齊 |
-| 文字 | **逐字比對文案**、字級、字重、行高、顏色 |
-| 顏色 | 背景、邊框、文字——用取色比對，不要沿用既有 token |
-| 狀態 | 每個狀態（預設／輸入中／錯誤／停用／選中）分別比 |
-| 圖示 | 尺寸、顏色、形狀（數 path 數量確認完整） |
+| Size | Container width/height, padding, margin, gaps between elements |
+| Alignment | Centers, left/right edges, centered vs space-between |
+| Text | **Copy word for word**, font size, weight, line height, color |
+| Color | Background, border, text — pick colors; never reuse an existing token by default |
+| States | Each state (default / typing / error / disabled / selected) separately |
+| Icons | Size, color, shape (count paths to confirm completeness) |
 
-**文案最容易被客戶抓到**，而且改起來最便宜。優先逐字核對。
+**Copy is what the client catches most**, and it is the cheapest to fix. Check it word for word first.
 
-## 取色
+## Picking colors
 
 ```python
 from PIL import Image
 im = Image.open('figma/xxx.png').convert('RGB')
 px = im.load()
-print('#%02X%02X%02X' % px[100, 200])  # 指定座標的色碼
+print('#%02X%02X%02X' % px[100, 200])  # color at the given coordinate
 ```
 
-取到的色若與專案既有 token 不同，**新增 token**，不要硬套相近的。
-設計稿的 `#718096` 與專案的 `#5B6878` 都是灰色文字，但不是同一個。
+When a picked color differs from the project's existing tokens, **add a token** instead of forcing the nearest one. The design's `#718096` and the project's `#5B6878` are both gray text, but not the same.
 
-## 截圖注意事項
+## Screenshot notes
 
-**不要用 `fullPage: true`。** `position: fixed` 的元素在全頁截圖裡會被合成在
-視窗位置，在一張比視窗高的圖裡就變成浮在中間，看起來像版面壞掉——
-但實際捲動時完全正常。用視窗截圖，需要看下半部就先捲動再截。
+**Avoid `fullPage: true`.** `position: fixed` elements are composited at the viewport position in full-page shots; in an image taller than the viewport they float mid-page and the layout looks broken — although scrolling the real page is fine. Use viewport screenshots; scroll first to capture the lower part.
 
-截圖尺寸統一，讓使用者能並排比較。
+Keep screenshot sizes uniform so the user can compare side by side.
