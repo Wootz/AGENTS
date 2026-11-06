@@ -1,6 +1,6 @@
 // ============================================================================
 // 自建 CQRS 核心介面、Dispatcher 實作與自動註冊擴充 (不使用 MediatR)
-// 範本支援：.NET 10 Primary Constructors & 1-based/2-based 開放泛型自動掃描
+// 範本支援：.NET 10 Primary Constructors、單／雙泛型參數 handler 介面的自動掃描註冊
 // ----------------------------------------------------------------------------
 // 放置位置：整檔複製為 <ProjectName>.Application/Cqrs/CQRS.cs，命名空間
 //           <ProjectName>.Application.Cqrs。business command/query/handler 放在
@@ -88,6 +88,7 @@ public static class CqrsDependencyInjection
 
         foreach (var assembly in handlerAssemblies)
         {
+            // 只掃描 public 型別：handler 一律宣告為 public，internal 的 handler 不會被註冊
             var concreteTypes = assembly.GetExportedTypes().Where(t => t is { IsAbstract: false, IsInterface: false });
 
             foreach (var type in concreteTypes)

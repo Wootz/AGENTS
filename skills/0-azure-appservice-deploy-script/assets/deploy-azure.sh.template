@@ -11,6 +11,13 @@ PROJECT_PATH="{{PROJECT_PATH}}"
 PUBLISH_DIR="publish_output"
 ZIP_FILE="deploy.zip"
 
+# 腳本結束時一律清理發行輸出與壓縮檔——成功、失敗或中斷皆然，避免發行內容（含設定檔）殘留
+cleanup() {
+    rm -rf "$PUBLISH_DIR"
+    rm -f "$ZIP_FILE"
+}
+trap cleanup EXIT
+
 echo "========================================================="
 echo "  {{APP_DISPLAY_NAME}} Azure App Service 發行設定檔 (Publish Profile) 部署腳本"
 echo "========================================================="
@@ -31,6 +38,8 @@ if [ -z "$PUBLISH_SETTINGS_FILE" ]; then
     echo "💡 請至 Azure Portal 的 App Service 頁面頂端，"
     echo "   點選「下載發行設定檔」(Get publish profile)，"
     echo "   並將下載的檔案放入專屬資料夾 [publish_profiles/] 中後重試。"
+    echo "💡 若「下載發行設定檔」無法點選，請先至「設定 → 組態 → 一般設定」"
+    echo "   開啟 SCM Basic Auth Publishing Credentials 後再下載。"
     exit 1
 fi
 
@@ -100,10 +109,9 @@ echo "🔹 目標 App Service: $APP_NAME"
 [ -n "$SITE_URL" ] && echo "🔹 站台網址: $SITE_URL"
 echo ""
 
-# 4. 清理舊的編譯與壓縮檔案
+# 4. 清理舊的編譯與壓縮檔案（上次執行若被強制終止，trap 來不及清理）
 echo "🧹 清理舊的暫存檔..."
-rm -rf "$PUBLISH_DIR"
-rm -f "$ZIP_FILE"
+cleanup
 
 # 5. 編譯與發行專案 (會自動編譯前端並複製至 wwwroot)
 echo "📦 開始編譯並發行專案 (此步驟會自動執行前端 pnpm build)..."
@@ -144,10 +152,7 @@ curl -X POST \
 echo ""
 echo "🎉 部署成功！"
 
-# 8. 清理暫存檔
-echo "🧹 清理暫存檔案..."
-rm -rf "$PUBLISH_DIR"
-rm -f "$ZIP_FILE"
+# 暫存檔由開頭註冊的 trap 在腳本結束時清理
 
 echo "========================================================="
 echo "  部署作業全部完成！"

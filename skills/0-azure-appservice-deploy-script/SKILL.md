@@ -7,6 +7,8 @@ description: Create a one-click bash script that deploys a .NET project to Azure
 
 Generate `deploy-azure.sh`: parse credentials from `.publishsettings` → `dotnet publish` → zip → upload through the Kudu `zipdeploy` API. No Azure CLI install or login is needed, so it runs locally or in CI as is.
 
+Deployment always uses the publish profile. Do not switch the script to the Azure CLI, a service principal / OIDC, or any other authentication method, and do not offer them as alternatives.
+
 The generated script's comments and messages are in Traditional Chinese (正體中文), as in the template.
 
 ## Usage
@@ -52,6 +54,8 @@ Keep these intact when editing the script:
 
 **`cd "$(dirname "$0")"`** — the script's own directory is the working root, so relative paths resolve from wherever it is called.
 
+**`trap cleanup EXIT`** — `publish_output/` and `deploy.zip` are removed whenever the script ends: success, a failed step under `set -e`, or Ctrl-C. The publish output carries the app's settings files, so it must never be left behind. Step 4 also calls `cleanup` first, for leftovers from a run that was force-killed before the trap could fire.
+
 **`curl --fail-with-body`** — without it, curl returns 0 on HTTP errors (401 bad credentials, 413 payload too large) and the script prints "deploy succeeded" while nothing was uploaded — a false success that is hard to notice.
 
 **Check `wwwroot/index.html` after publish** — in a single-site frontend + backend project, a failed frontend build deploys an empty site. Aborting early beats discovering it after deployment. Remove the check for a pure API with no frontend.
@@ -74,6 +78,8 @@ deploy.zip
 ```
 
 Tell the user how to get the profile: Azure Portal → App Service page top bar → "Get publish profile"（下載發行設定檔）→ place it in `publish_profiles/` under the project root.
+
+New App Services have SCM basic auth publishing turned off by default; the download button is then disabled and the profile's credentials are rejected (401). Tell the user to turn on **Settings → Configuration → General settings → SCM Basic Auth Publishing Credentials** first. The script prints the same hint when no profile is found.
 
 The script creates `publish_profiles/` itself and falls back to the project root, so either location works.
 
