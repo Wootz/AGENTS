@@ -157,7 +157,7 @@ Read these files **in full** before proceeding:
 
 1. `references/dotnet-rules.md` — development & testing conventions to enforce throughout the project.
 2. `references/dotnet-scaffold.md` — canonical directory structure, scaffold commands, CPM configuration, entry point template, CQRS conventions, and domain events dispatch flow.
-3. `references/dotnet-domain-template.cs` — canonical implementations of `AggregateRoot<TId>`, `Entity<TId>`, `DomainEvent`, `IDomainEvent`, `Result<T>`, and `ValueObject`. Use verbatim — do not improvise these building blocks.
+3. `references/dotnet-domain-template.cs` — canonical implementations of `AggregateRoot<TId>`, `Entity<TId>`, `DomainEvent`, `IDomainEvent`, `IHasDomainEvents`, `Result<T>`, and `ValueObject`. Use verbatim — do not improvise these building blocks.
 4. `references/dotnet-cqrs-template.cs` — canonical CQRS interfaces, dispatchers, and assembly scanning registration. Copy verbatim into `<ProjectName>.Application/Cqrs/CQRS.cs` (namespace `<ProjectName>.Application.Cqrs`).
 
 Follow them exactly — do not improvise the structure.
@@ -186,11 +186,11 @@ Execute the scaffold in this order:
    If network access is unavailable, the script's package resolution will fail — stop and report that, rather than guessing versions.
    The reference package list in `dotnet-scaffold.md` remains the source of truth for *what* gets installed; do not add packages outside it without asking.
 2. Wire up the entry point (`Program.cs`) with the minimum viable setup — **overwrite** the `dotnet new webapi` generated content entirely using the canonical template.
-3. Copy `references/dotnet-cqrs-template.cs` verbatim into a single `Cqrs/CQRS.cs` file inside the `Application` project, replacing `YourProject` with the project namespace (namespace becomes `<ProjectName>.Application.Cqrs`). This file holds only the CQRS core (interfaces, dispatchers, `AddCqrs`); business commands/queries/handlers live in the `Commands/`, `Queries/`, and `EventHandlers/` folders of the same project.
+3. Copy `references/dotnet-cqrs-template.cs` verbatim into a single `Cqrs/CQRS.cs` file inside the `Application` project, replacing `YourProject` with the project namespace (namespace becomes `<ProjectName>.Application.Cqrs`). This file holds only the CQRS core (interfaces, dispatchers, `AddCqrs`); business commands/queries/handlers live in the `Commands/`, `Queries/`, and `EventHandlers/` folders of the same project. Declare every command, query and domain event handler `public`: assembly scanning uses `GetExportedTypes()`, so an `internal` handler is never registered and only fails at dispatch time.
 4. Create the layer stubs and domain building blocks — what to scaffold differs by domain model style:
 
    **Rich Domain Model:**
-   - Copy `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainEvent` from `dotnet-domain-template.cs` into the `Domain` project.
+   - Copy `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainEvent`, `IHasDomainEvents` from `dotnet-domain-template.cs` into the `Domain` project.
    - Copy `ValueObject` abstract base class into `Domain/ValueObjects/` (for cases requiring custom validation logic; prefer `record` types otherwise).
    - Scaffold **one named repository interface per aggregate** in `Domain/Interfaces/` (e.g. `IOrderRepository.cs`), following the `IOrderRepository` example in `dotnet-domain-template.cs`. Declare only the operations that aggregate's CommandHandlers actually call; methods return tracked aggregate roots.
    - Scaffold `Domain/Interfaces/IUnitOfWork.cs` using the persistence-agnostic `CommitAsync(CancellationToken)` contract from `dotnet-domain-template.cs`.
@@ -198,7 +198,7 @@ Execute the scaffold in this order:
 
      | File | Project | Description |
      |------|------|------|
-     | `Domain/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Domain` | Interface that dispatches domain events; IUnitOfWork depends on it |
+     | `Domain/Interfaces/IDomainEventDispatcher.cs` | `<ProjectName>.Domain` | Interface that dispatches domain events; `AppUnitOfWork` calls it after commit |
      | `Domain/Interfaces/IDomainEventHandler.cs` | `<ProjectName>.Domain` | Generic handler interface `IDomainEventHandler<TEvent>`; Application EventHandlers implement it |
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation of `IDomainEventDispatcher`; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
