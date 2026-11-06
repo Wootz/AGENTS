@@ -643,8 +643,8 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `IUnitOfWork` — persistence-agnostic `CommitAsync(CancellationToken)` contract in `Domain/Interfaces/`
 - `IDomainEventDispatcher` in `Domain/Interfaces/` (if Domain Events enabled)
 - `IDomainEventHandler<TEvent>` in `Domain/Interfaces/` (if Domain Events enabled)
-- `IDomainEvent` / `DomainEvent` base record (`Domain/Events/`)
-- `AggregateRoot<TId>` with `DomainEvents` collection and `ClearDomainEvents()` (`Domain/Entities/`)
+- `IDomainEvent` / `DomainEvent` base record and `IHasDomainEvents` (`Domain/Events/`)
+- `AggregateRoot<TId>` implementing `IHasDomainEvents` — `DomainEvents` collection and `ClearDomainEvents()` (`Domain/Entities/`)
 - `Entity<TId>` for non-root child entities (`Domain/Entities/`)
 - `ValueObject` abstract base — prefer `record` types for simple value objects (`Domain/ValueObjects/`)
 - `Result<T>` and `Result` for domain operation outcomes (`Domain/Common/`) — if Result Pattern enabled
@@ -923,7 +923,7 @@ EF Core does not connect at startup, so a syntactically valid connection string 
 
 **2. Resolving `IUnitOfWork` in a test requires `CreateAsyncScope()`.**
 
-`IUnitOfWork : IAsyncDisposable`, and disposing a *synchronous* scope that holds an `IAsyncDisposable`-only service throws:
+`AppUnitOfWork` implements only `IAsyncDisposable` (the `IUnitOfWork` interface itself is not disposable — the scope owns it), and disposing a *synchronous* scope that holds an `IAsyncDisposable`-only service throws:
 
 > `InvalidOperationException: '...UnitOfWork' type only implements IAsyncDisposable. Use DisposeAsync to dispose the container.`
 

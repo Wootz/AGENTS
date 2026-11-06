@@ -39,6 +39,24 @@ public abstract record DomainEvent : IDomainEvent
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FILE: Domain/Events/IHasDomainEvents.cs
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace YourProject.Domain.Events;
+
+/// <summary>
+/// 持有待派送 domain event 的物件（AggregateRoot）的非泛型介面。
+/// IUnitOfWork 以此介面收集事件，因此不受 aggregate 識別值型別
+/// （Guid、int、強型別 id）影響。
+/// </summary>
+public interface IHasDomainEvents
+{
+    IReadOnlyList<IDomainEvent> DomainEvents { get; }
+
+    void ClearDomainEvents();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FILE: Domain/Entities/AggregateRoot.cs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -51,7 +69,7 @@ namespace YourProject.Domain.Entities;
 /// 保存本次操作中產生、尚未 commit 的 domain event。
 /// 事件由 Application 層在交易 commit 後派送——絕不在 domain 內部派送。
 /// </summary>
-public abstract class AggregateRoot<TId>
+public abstract class AggregateRoot<TId> : IHasDomainEvents
 {
     private readonly List<IDomainEvent> _domainEvents = [];
 
@@ -120,7 +138,7 @@ namespace YourProject.Domain.Common;
 /// 只有真正非預期的錯誤或基礎設施故障才拋出例外。
 ///
 /// 成功：Result.Ok(order)
-/// 失敗：Result.Fail&lt;Order&gt;("Order already cancelled.")
+/// 失敗：Result&lt;Order&gt;.Fail("Order already cancelled.")
 /// </summary>
 public sealed class Result<T>
 {
@@ -276,9 +294,12 @@ namespace YourProject.Domain.Interfaces;
 // Repositories record persistence operations. Application handlers call
 // CommitAsync once per use case. EF, Dapper/raw SQL, MongoDB, or other
 // persistence technologies decide how the commit is implemented.
+// The interface is not disposable: the DI scope owns the instance, so handlers
+// inject it through the constructor and never dispose it. The implementation
+// (AppUnitOfWork) implements IAsyncDisposable and the scope disposes it.
 // ════════════════════════════════════════════════════════════════════════════
 
-public interface IUnitOfWork : IAsyncDisposable
+public interface IUnitOfWork
 {
     /// <summary>
     /// Commit 本次 use case 所有待處理的持久化操作。
@@ -293,11 +314,11 @@ public interface IUnitOfWork : IAsyncDisposable
 // using System.Data.Common;
 // using Microsoft.EntityFrameworkCore;
 // using Microsoft.EntityFrameworkCore.Storage;
-// using YourProject.Domain.Entities;        // AggregateRoot<T>
+// using YourProject.Domain.Events;          // IHasDomainEvents
 // using YourProject.Domain.Interfaces;      // IUnitOfWork, IDomainEventDispatcher
 //
 // public sealed class AppUnitOfWork(WriteDbContext dbContext, IDomainEventDispatcher dispatcher)
-//     : IUnitOfWork
+//     : IUnitOfWork, IAsyncDisposable
 // {
 //     private IDbContextTransaction? _transaction;
 //
@@ -323,13 +344,9 @@ public interface IUnitOfWork : IAsyncDisposable
 //     public async Task CommitAsync(CancellationToken cancellationToken = default)
 //     {
 //         // 1. 存檔前先收集待派送的 domain event。
-//         //    注意：這裡寫死 AggregateRoot<Guid>。若專案的 aggregate 識別值是
-//         //    其他型別（int、long、強型別 id），必須同步修改這個型別參數——
-//         //    否則永遠收集不到事件，而且失敗是靜默的：資料全部 commit，事件一個都不派送。
-//         //    若有多種識別值型別，改以非泛型的 IHasDomainEvents 介面標記 aggregate，
-//         //    並查詢 Entries<IHasDomainEvents>()。
+//         //    以非泛型的 IHasDomainEvents 查詢，任何識別值型別的 aggregate 都收得到。
 //         var aggregates = dbContext.ChangeTracker
-//             .Entries<AggregateRoot<Guid>>()
+//             .Entries<IHasDomainEvents>()
 //             .Where(e => e.Entity.DomainEvents.Count > 0)
 //             .Select(e => e.Entity)
 //             .ToList();
@@ -411,12 +428,25 @@ public interface IUnitOfWork : IAsyncDisposable
 // services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppUnitOfWork>());
 
 // ── Usage in a Rich command handler ──────────────────────────────────────────
+// Inject IUnitOfWork through the constructor. The DI scope owns and disposes it;
+// never resolve it from IServiceProvider or wrap it in `await using`.
 
-// await using var uow = serviceProvider.GetRequiredService<IUnitOfWork>();
-// var result = aggregate.DoSomething();
-// if (result.IsFailure) return result;
-// await _repository.AddAsync(aggregate, cancellationToken);
-// await uow.CommitAsync(cancellationToken); // 先 commit 持久化，再派送 domain event
+// public sealed class CancelOrderCommandHandler(IOrderRepository orders, IUnitOfWork unitOfWork)
+//     : ICommandHandler<CancelOrderCommand, Result>
+// {
+//     public async Task<Result> HandleAsync(CancelOrderCommand command, CancellationToken cancellationToken = default)
+//     {
+//         var order = await orders.GetByIdAsync(command.OrderId, cancellationToken);
+//         if (order is null) return Result.Fail("Order not found.");
+//
+//         var result = order.Cancel();
+//         if (result.IsFailure) return result;
+//
+//         orders.Update(order);
+//         await unitOfWork.CommitAsync(cancellationToken); // 先 commit 持久化，再派送 domain event
+//         return result;
+//     }
+// }
 
 // ════════════════════════════════════════════════════════════════════════════
 // ANEMIC DOMAIN MODEL
@@ -425,94 +455,30 @@ public interface IUnitOfWork : IAsyncDisposable
 // once after all repository operations for the use case are complete.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Anemic EF/Dapper UnitOfWork reference implementation ─────────────────────
-
-// using System.Data.Common;
-// using Microsoft.EntityFrameworkCore;
-// using Microsoft.EntityFrameworkCore.Storage;
-// using YourProject.Application.Interfaces; // IUnitOfWork
-//
-// public sealed class AppUnitOfWork(WriteDbContext dbContext) : IUnitOfWork
-// {
-//     private IDbContextTransaction? _transaction;
-//
-//     // 執行 Dapper/raw SQL 的 Persistence repository 可注入這個具體的
-//     // AppUnitOfWork 並呼叫 EnsureTransactionAsync()，讓 EF 與 raw SQL
-//     // 共用同一條連線與交易。不要把這個具體型別暴露給 Domain 或 Application。
-//     public async Task<IDbContextTransaction> EnsureTransactionAsync(CancellationToken cancellationToken = default)
-//         => _transaction ??= await dbContext.Database.BeginTransactionAsync(cancellationToken);
-//
-//     // 關鍵——Connection 與 CurrentTransaction 必須都來自同一個 dbContext
-//     // （見 Rich 實作的說明）。Dapper repository 在這個 Connection 上執行並傳入
-//     // 這個 CurrentTransaction；絕對不要另外建立連線。
-//     public DbConnection Connection => dbContext.Database.GetDbConnection();
-//
-//     public DbTransaction? CurrentTransaction =>
-//         dbContext.Database.CurrentTransaction?.GetDbTransaction();
-//
-//     public async Task CommitAsync(CancellationToken cancellationToken = default)
-//     {
-//         // 只有在 SaveChangesAsync 以外還有其他寫入時——也就是 Dapper/raw SQL
-//         // repository 呼叫過 EnsureTransactionAsync()——才需要明確的交易。
-//         // SaveChangesAsync 本身就是 atomic，無條件開交易只會多一次
-//         // BEGIN/COMMIT 往返，並延長佔用連線的時間。
-//         if (_transaction is null)
-//         {
-//             await dbContext.SaveChangesAsync(cancellationToken);
-//             return;
-//         }
-//
-//         try
-//         {
-//             await dbContext.SaveChangesAsync(cancellationToken);
-//             await _transaction.CommitAsync(cancellationToken);
-//         }
-//         catch
-//         {
-//             // Rollback 本身也可能失敗（連線已斷、伺服器端已中止交易）。
-//             // 吞掉這個例外——呼叫端需要的是「原始」例外；
-//             // 讓 rollback 的例外往外拋會掩蓋它。
-//             try { await _transaction.RollbackAsync(cancellationToken); }
-//             catch { /* 保留原始例外作為回報的失敗原因 */ }
-//             throw;
-//         }
-//         finally
-//         {
-//             // 不論成敗都要釋放——已結束的交易無法重用。若不清空，同一個 scope 內
-//             // 第二次 CommitAsync() 會透過 EnsureTransactionAsync 的 ??= 重用失效的交易，
-//             // 拋出「This transaction has completed; it is no longer usable」。
-//             // 在同一個 scope 內執行多個 use case 的批次作業會立刻踩到。
-//             await _transaction.DisposeAsync();
-//             _transaction = null;
-//         }
-//     }
-//
-//     public async ValueTask DisposeAsync()
-//     {
-//         // 只有在 use case 從未 commit 時，才會帶著進行中的交易走到這裡
-//         // ——發生例外，或 Dapper repository 開了交易後提前 return。
-//         // Dispose 會隱含 rollback，但仍明確 rollback，
-//         // 讓意圖寫在程式碼裡，而不是依賴 EF 的 dispose 語意。
-//         if (_transaction is not null)
-//         {
-//             try { await _transaction.RollbackAsync(); }
-//             catch { /* 交易已結束或連線已斷 */ }
-//             await _transaction.DisposeAsync();
-//             _transaction = null;
-//         }
-//     }
-// }
-//
-// DI 註冊：
-// services.AddScoped<AppUnitOfWork>();
-// services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppUnitOfWork>());
+// ── Anemic UnitOfWork reference implementation ───────────────────────────────
+// Use the Rich AppUnitOfWork above with exactly these differences:
+//   - usings: IUnitOfWork comes from YourProject.Application.Interfaces;
+//     drop YourProject.Domain.Events and YourProject.Domain.Interfaces.
+//   - constructor: AppUnitOfWork(WriteDbContext dbContext) — no IDomainEventDispatcher.
+//   - CommitAsync: delete step 1 (collect events) and step 3 (dispatch and clear);
+//     keep step 2 unchanged. The Application handler dispatches explicit events
+//     itself after CommitAsync succeeds.
+// Everything else — EnsureTransactionAsync, Connection, CurrentTransaction,
+// DisposeAsync, the comments and the DI registration — is identical.
 
 // ── Usage in an Anemic command handler ───────────────────────────────────────
 
-// await using var uow = serviceProvider.GetRequiredService<IUnitOfWork>();
-// await _repository.AddAsync(entity, cancellationToken);
-// otherRepository.Update(otherEntity);
-// await uow.CommitAsync(cancellationToken); // 此 use case 唯一的 commit 點
+// public sealed class CreateOrderCommandHandler(IOrderRepository orders, IUnitOfWork unitOfWork)
+//     : ICommandHandler<CreateOrderCommand, Result<Guid>>
+// {
+//     public async Task<Result<Guid>> HandleAsync(CreateOrderCommand command, CancellationToken cancellationToken = default)
+//     {
+//         var order = new Order { Id = Guid.NewGuid(), CustomerId = command.CustomerId };
+//         await orders.AddAsync(order, cancellationToken);
+//         await unitOfWork.CommitAsync(cancellationToken); // 此 use case 唯一的 commit 點
+//         return Result<Guid>.Ok(order.Id);
+//     }
+// }
 
 // ── Dapper/raw SQL repository sharing the UoW transaction ────────────────────
 // A Persistence-layer repo that needs a narrow raw-SQL UPDATE (counter, flag,
@@ -526,13 +492,20 @@ public interface IUnitOfWork : IAsyncDisposable
 //   3. transaction: uow.CurrentTransaction is passed (the tx opened on that connection).
 // The handler still owns the only commit point: uow.CommitAsync() commits EF's
 // SaveChanges and this UPDATE together, or rolls both back.
+// Insufficient stock is an expected outcome, not an exception: the method returns
+// false, and the handler returns Result.Fail("Insufficient stock.") without calling
+// CommitAsync — the open transaction is rolled back when the scope disposes
+// AppUnitOfWork. TryDeductStockAsync is declared on IProductRepository like any
+// other operation of that aggregate.
 //
 // using Dapper;
+// using YourProject.Application.Interfaces;   // IProductRepository（Rich：YourProject.Domain.Interfaces）
 // using YourProject.Persistence.UnitOfWork;   // 具體的 AppUnitOfWork（僅限 Persistence 內部）
 //
-// public sealed class ProductStockRepository(AppUnitOfWork uow)
+// public sealed class ProductRepository(AppUnitOfWork uow) : IProductRepository
 // {
-//     public async Task DeductStockAsync(Guid productId, int qty, CancellationToken ct)
+//     // 回傳 false 表示庫存不足；WHERE Stock >= @qty 讓檢查與扣減在同一句完成，不會超賣
+//     public async Task<bool> TryDeductStockAsync(Guid productId, int qty, CancellationToken ct)
 //     {
 //         await uow.EnsureTransactionAsync(ct);            // (1) 確保交易已開啟
 //         var affected = await uow.Connection.ExecuteAsync(new CommandDefinition(
@@ -540,8 +513,7 @@ public interface IUnitOfWork : IAsyncDisposable
 //             new { productId, qty },
 //             transaction: uow.CurrentTransaction,         // (2)+(3) 同一條連線＋同一筆交易
 //             cancellationToken: ct));
-//         if (affected == 0)
-//             throw new DomainException("Insufficient stock"); // atomic 防護：不會超賣
+//         return affected > 0;
 //     }
 // }
 
@@ -555,7 +527,9 @@ namespace YourProject.Domain.Interfaces;
 
 /// <summary>
 /// 將 domain event 派送給 Application 層的 handler。
-/// 定義於 Domain，讓同在 Domain 的 IUnitOfWork 能直接參照。
+/// 與 IUnitOfWork 同處：Rich model 定義於 Domain，Anemic model 定義於 Application。
+/// Rich 由 AppUnitOfWork 在 commit 後透過它派送；Anemic 由 Application handler
+/// 在 CommitAsync 成功後自行呼叫。
 /// 實作位於 Infrastructure（in-process、記憶體內派送）。
 /// 事件在持久化交易 commit「之後」才派送——絕不在交易內派送。
 /// </summary>
@@ -607,7 +581,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 // DI 註冊（於 Api 或 Infrastructure 的 DI extension）：
 // services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 // services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedEventHandler>();
-// ── 或使用 assembly scanning ───────────────────────────────────────────────────────────
+// ── 或使用 assembly scanning（只掃描 public 型別：event handler 一律宣告為 public）──────────
 // foreach (var type in typeof(SomeHandler).Assembly.GetExportedTypes()
 //     .Where(t => !t.IsAbstract && !t.IsInterface))
 // {
@@ -635,6 +609,8 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 // }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Example: Rich Aggregate Root (place in Domain/Entities/, e.g. Order.cs)
+// Factory method + behaviour methods that return Result and raise domain events.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // using YourProject.Domain.Common;
