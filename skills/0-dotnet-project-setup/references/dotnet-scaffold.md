@@ -45,7 +45,7 @@ Key principles:
 │       └── dotnet-rules.md                      # Full .NET development rules copied from this skill
 ├── src/
 │   ├── <ProjectName>.Domain/                   # DDD Domain layer — zero framework dependencies
-│   │   ├── Common/                             # Result<T>, Result (domain operation outcomes)
+│   │   ├── Common/                             # Result<T>, Result, Error, ErrorType (domain operation outcomes)
 │   │   ├── Entities/                           # Aggregate roots and entities
 │   │   ├── ValueObjects/                       # Immutable value objects (record types)
 │   │   ├── Enums/
@@ -80,7 +80,7 @@ Key principles:
 │   │   ├── UnitOfWork/
 │   │   └── <ProjectName>.Persistence.csproj
 │   └── <ProjectName>.Api/                     # Entry point — routes, middleware
-│       ├── Endpoints/
+│       ├── Endpoints/                          # incl. ErrorExtensions.cs — the only ErrorType → HTTP status mapping
 │       ├── Middlewares/
 │       ├── Program.cs
 │       ├── appsettings.json
@@ -111,7 +111,7 @@ src/
 │   │   │   ├── Events/
 │   │   │   └── Enums/
 │   │   └── {Module}/…
-│   └── Common/                        # Result<T>, domain event base
+│   └── Common/                        # Result<T>, Result, Error, ErrorType, domain event base
 │                                      # (+ Entity/AggregateRoot bases, Rich only)
 ├── <ProjectName>.Application/
 │   ├── Cqrs/CQRS.cs                   # core — belongs to no module
@@ -408,13 +408,19 @@ try
 
     // 驗證（FluentValidation——validator 定義於 Application 專案）
     // builder.Services.AddValidatorsFromAssembly(typeof(SomeValidator).Assembly);
-    // 注意：endpoint 的 request 驗證以 IValidator<T>.ValidateAndThrowAsync() 手動呼叫。
+    // 注意：endpoint 以 IValidator<T>.ValidateAsync() 手動驗證，失敗時回傳 Results.ValidationProblem(...)。
+
+    // 錯誤回應：未預期例外（500）與 middleware 回傳的空白錯誤（401／403／404）一律轉成 RFC 7807 Problem Details
+    builder.Services.AddProblemDetails();
 
     // TODO: builder.Services.AddCqrs(typeof(SomeHandler).Assembly);
     // TODO: builder.Services.AddPersistence(builder.Configuration); // 註冊 WriteDbContext（寫入）+ ReadDbContext（讀取）
     // TODO: builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
+
+    app.UseExceptionHandler();   // 未預期例外 → 500 Problem Details，不帶 stack trace
+    app.UseStatusCodePages();    // 沒有 body 的錯誤回應（例如驗證 middleware 的 401／403）補上 Problem Details
 
     if (app.Environment.IsDevelopment())
     {
@@ -492,7 +498,7 @@ Each feature module must define a dedicated static class under `src/<ProjectName
 - Class and method must both be `internal static`
 - Route handler methods must be declared as `private static async Task<IResult>` with a named method (no inline lambdas)
 - Every `Map*` call **must chain** `.WithName()`, `.WithSummary()`, `.WithDescription()`
-- Handlers return `Result`/`Result<T>`; the endpoint unwraps it — success returns `result.Value`, failure returns `Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest)` (RFC 7807). `Result` carries no error kind, so every expected failure maps to 400
+- Handlers return `Result`/`Result<T>`; the endpoint unwraps it — success returns `result.Value`, failure returns `result.Error!.ToProblem()` from `Endpoints/ErrorExtensions.cs` (below), the only place that maps `ErrorType` to a status code
 - `Program.cs` only calls `app.Map<Feature>Endpoints()` — no handler logic inside
 
 ```csharp
@@ -518,7 +524,7 @@ internal static class ArticlesEndpoint
         var result = await queries.DispatchAsync(new ListArticlesQuery(), ct);
         return result.IsSuccess
             ? Results.Ok(result.Value)
-            : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
+            : result.Error!.ToProblem();
     }
 
     private static async Task<IResult> CreateArticleAsync(
@@ -530,8 +536,26 @@ internal static class ArticlesEndpoint
             new CreateArticleCommand(req.Title, req.Content), ct);
         return result.IsSuccess
             ? Results.Created($"/api/demo/articles/{result.Value!.Id}", result.Value)
-            : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
+            : result.Error!.ToProblem();
     }
+}
+```
+
+`Endpoints/ErrorExtensions.cs` — the mapping table from `dotnet-rules.md` → Error Responses, written once:
+```csharp
+internal static class ErrorExtensions
+{
+    internal static int ToStatusCode(this Error error) => error.Type switch
+    {
+        ErrorType.Validation => StatusCodes.Status400BadRequest,
+        ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
+        ErrorType.Forbidden => StatusCodes.Status403Forbidden,
+        ErrorType.NotFound => StatusCodes.Status404NotFound,
+        _ => throw new ArgumentOutOfRangeException(nameof(error), error.Type, "未對應的 ErrorType"),
+    };
+
+    internal static IResult ToProblem(this Error error)
+        => Results.Problem(detail: error.Message, statusCode: error.ToStatusCode());
 }
 ```
 
@@ -570,7 +594,7 @@ internal sealed class CreateSupplierEndpoint(ICommandDispatcher commands)
     {
         var result = await commands.DispatchAsync(new CreateSupplierCommand(req.TaxId, req.Name), ct);
         if (result.IsFailure)
-            ThrowError(result.Error); // 中止 endpoint，回傳 400 Problem Details
+            ThrowError(result.Error!.Message, result.Error.ToStatusCode()); // 中止 endpoint，回傳 Problem Details
 
         return new CreateSupplierResponse(result.Value);
     }
@@ -580,11 +604,11 @@ internal sealed record CreateSupplierRequest(string TaxId, string Name);
 internal sealed record CreateSupplierResponse(Guid Id);
 ```
 
-A `Result` failure goes through `ThrowError(result.Error)`: it stops the endpoint and sends 400, and with `c.Errors.UseProblemDetails()` (below) the body is RFC 7807 Problem Details — the same contract as the Minimal API variant.
+A `Result` failure goes through `ThrowError(result.Error!.Message, result.Error.ToStatusCode())`: it stops the endpoint and sends the mapped status, and with `c.Errors.UseProblemDetails()` (below) the body is RFC 7807 Problem Details. `ToStatusCode()` comes from the same `Endpoints/ErrorExtensions.cs` as the Minimal API variant (`ToProblem()` is unused here).
 
 **Wiring in `Program.cs`:** `builder.Services.AddFastEndpoints();` and `app.UseFastEndpoints(c => c.Errors.UseProblemDetails());` — endpoints are discovered by assembly scan, so there is no per-feature `Map*` call.
 
-**Validation:** FastEndpoints auto-runs a `Validator<TRequest>` found in the *endpoint's own* assembly. Validators for commands/queries stay in `Application` per the standard rule; a request-shape validator may sit beside its endpoint. Do not duplicate the same rule in both places.
+**Validation:** FastEndpoints auto-runs a `Validator<TRequest>` found in the *endpoint's own* assembly. Validators for commands/queries stay in `Application` per the standard rule; a request-shape validator may sit beside its endpoint. When `ExecuteAsync` runs an `Application` validator, report its failures with `ValidationFailures.AddRange(validation.Errors); ThrowIfAnyErrors();` — 400 with per-field errors, never `ValidateAndThrowAsync`. Do not duplicate the same rule in both places.
 
 **Two things to get right:**
 
@@ -654,7 +678,7 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `AggregateRoot<TId>` implementing `IHasDomainEvents` — `DomainEvents` collection and `ClearDomainEvents()` (`Domain/Entities/`)
 - `Entity<TId>` for non-root child entities (`Domain/Entities/`)
 - `ValueObject` abstract base — prefer `record` types for simple value objects (`Domain/ValueObjects/`)
-- `Result<T>` and `Result` for domain operation outcomes (`Domain/Common/`) — if Result Pattern enabled
+- `Result<T>`, `Result`, `Error` and `ErrorType` for domain operation outcomes (`Domain/Common/`) — if Result Pattern enabled
 - Example Aggregate Root with factory method, behaviour methods, and domain events
 - Rich Domain Services, if scaffolded, are pure domain logic and do not inject repositories. Application handlers load required aggregates and pass them into domain methods/services.
 
@@ -663,7 +687,7 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Application/Interfaces/`
 - Concrete POCO entities in `Domain/Entities/` with no base class
 - Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — pure logic; they inject **no repositories and no dispatcher**, only custom domain capability interfaces if genuinely needed. Handlers load the data and pass it in.
-- `Result<T>` and `Result` in `Domain/Common/` — if Result Pattern enabled
+- `Result<T>`, `Result`, `Error` and `ErrorType` in `Domain/Common/` — if Result Pattern enabled
 - If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Application/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
 - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject`
 

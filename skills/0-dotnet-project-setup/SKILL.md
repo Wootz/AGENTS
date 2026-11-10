@@ -76,6 +76,7 @@ Ask these in the same upfront message and include the recommended default. If th
    - If enabled: see Step 3 for the full list of files to scaffold.
 8. **Result Pattern** — **do not ask; always enabled.** Domain operations return `Result<T>` for expected business failures instead of throwing. This applies to Anemic and CRUD services too — "record not found", "email already taken", and "insufficient stock" are expected outcomes, and exceptions are for the unexpected. Scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
    - Infrastructure faults (DB unreachable, serialization errors) still throw — `Result` is for business outcomes only.
+   - A failure carries `Error(ErrorType, Message)`; `ErrorType` is `Validation` (400), `Unauthorized` (401), `Forbidden` (403), `NotFound` (404) — no 409/422, business-rule failures are `Validation`. The API layer maps it in one place, `Api/Endpoints/ErrorExtensions.cs`. Full table in `references/dotnet-rules.md` → Error Responses.
    - **Who returns it depends on the domain model.** Rich: aggregate methods and Domain Services (`order.Cancel()` → `Result`). Anemic: the entities are POCOs with no methods, so the **command/query handlers** return it, plus any Domain Service that exists. `Result<T>` still lives in `Domain/Common/` under both — it is a domain vocabulary type, not a persistence or transport concern, and the endpoint layer translates it (typically to RFC 7807 Problem Details).
    - Listed in the confirmation summary (Step 1.5) so the user can opt out there.
 9. **Event-Driven Design (EDD / Integration Events)** — ask whether the system needs event-driven communication between services or bounded contexts. Calibrate the recommendation based on the project nature described in item 0:
@@ -157,7 +158,7 @@ Read these files **in full** before proceeding:
 
 1. `references/dotnet-rules.md` — development & testing conventions to enforce throughout the project.
 2. `references/dotnet-scaffold.md` — canonical directory structure, scaffold commands, CPM configuration, entry point template, CQRS conventions, and domain events dispatch flow.
-3. `references/dotnet-domain-template.cs` — canonical implementations of `AggregateRoot<TId>`, `Entity<TId>`, `DomainEvent`, `IDomainEvent`, `IHasDomainEvents`, `Result<T>`, and `ValueObject`. Use verbatim — do not improvise these building blocks.
+3. `references/dotnet-domain-template.cs` — canonical implementations of `AggregateRoot<TId>`, `Entity<TId>`, `DomainEvent`, `IDomainEvent`, `IHasDomainEvents`, `Result<T>` (with `Error`/`ErrorType`), and `ValueObject`. Use verbatim — do not improvise these building blocks.
 4. `references/dotnet-cqrs-template.cs` — canonical CQRS interfaces, dispatchers, and assembly scanning registration. Copy verbatim into `<ProjectName>.Application/Cqrs/CQRS.cs` (namespace `<ProjectName>.Application.Cqrs`).
 
 Follow them exactly — do not improvise the structure.
@@ -203,7 +204,7 @@ Execute the scaffold in this order:
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation of `IDomainEventDispatcher`; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
      DI registration uses assembly scanning (see the DI registration example in `dotnet-domain-template.cs`). Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement the matching `IDomainEventHandler<TEvent>`.
-   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>` and `Result` from `dotnet-domain-template.cs` into `Domain/Common/`.
+   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/`.
 
    **Anemic Domain Model:**
    - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject` — these building blocks are not used in the Anemic model.
@@ -222,7 +223,7 @@ Execute the scaffold in this order:
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
      Application handlers call `DispatchAsync()` manually after the repository operations finish and the use case commits successfully (Domain Services never dispatch events). DI registration uses assembly scanning. Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement `IDomainEventHandler<TEvent>`.
-   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>` and `Result` from `dotnet-domain-template.cs` into `Domain/Common/`.
+   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/`.
 
    **Both models:**
    - Scaffold `Persistence/AppDbContext.cs`, `WriteDbContext.cs`, `ReadDbContext.cs`, and `WriteDbContextFactory.cs` verbatim from `references/dotnet-scaffold.md` → CQRS Pattern, plus `DependencyInjection.cs` (`AddPersistence()`) registering both contexts, `AppUnitOfWork` (scoped, `IUnitOfWork` mapped to it), and every repository/read repository. Never register `AppDbContext` itself.
@@ -262,6 +263,7 @@ Before declaring the scaffold complete, verify:
 - [ ] If Domain Events enabled: Rich model dispatches collected aggregate events after `IUnitOfWork.CommitAsync()` commits successfully; Anemic model dispatches explicit events only after the use case commit succeeds
 - [ ] In-process domain event handlers do not perform irreversible/reliability-critical side effects directly; external side effects use explicit Application orchestration or retryable background work only when needed
 - [ ] If Result Pattern enabled: `Result<T>` in `Domain/Common/`; domain methods return `Result` instead of throwing for business violations
+- [ ] Errors are RFC 7807 Problem Details end to end: `Api/Endpoints/ErrorExtensions.cs` is the only `ErrorType` → status mapping (400/401/403/404, no 409); endpoints validate with `ValidateAsync` + `Results.ValidationProblem(...)`, never `ValidateAndThrowAsync`; `Program.cs` registers `AddProblemDetails()`, `UseExceptionHandler()` and `UseStatusCodePages()`
 - [ ] If Event-Driven Design enabled: `Application/IntegrationEvents/` scaffolded, `IEventBus` defined in `Application/Interfaces/`, stub implementation in `Infrastructure/`
 - [ ] Exactly one DB provider package is added in `Api`, matching the user-selected database
 - [ ] `appsettings` declares `ConnectionStrings:Write` **and** `ConnectionStrings:Read`; both are consumed — `WriteDbContext` binds to `Write`, `ReadDbContext` to `Read` — and without a replica both hold the same value

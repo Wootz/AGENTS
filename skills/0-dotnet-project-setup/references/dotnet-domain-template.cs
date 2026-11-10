@@ -133,21 +133,45 @@ public abstract class Entity<TId>
 namespace YourProject.Domain.Common;
 
 /// <summary>
+/// 預期內失敗的分類。命名不帶 HTTP 概念；API 層統一對應到狀態碼：
+/// Validation → 400、Unauthorized → 401、Forbidden → 403、NotFound → 404。
+/// </summary>
+public enum ErrorType
+{
+    /// <summary>
+    /// 輸入或業務規則不成立，例如重複建立、訂單已取消、庫存不足。
+    /// 請求格式的驗證（必填、長度）由 FluentValidation 處理，不走 Result。
+    /// </summary>
+    Validation,
+
+    /// <summary>身分驗證失敗，例如登入時帳號或密碼錯誤。</summary>
+    Unauthorized,
+
+    /// <summary>已登入但無權操作此資源，例如修改別人的訂單。</summary>
+    Forbidden,
+
+    /// <summary>要操作的資源不存在。</summary>
+    NotFound
+}
+
+public sealed record Error(ErrorType Type, string Message);
+
+/// <summary>
 /// Domain 操作的 Result pattern。
 /// 預期內的業務規則違反以此回傳，不拋出例外；
 /// 只有真正非預期的錯誤或基礎設施故障才拋出例外。
 ///
-/// 成功：Result.Ok(order)
-/// 失敗：Result&lt;Order&gt;.Fail("Order already cancelled.")
+/// 成功：Result&lt;Order&gt;.Ok(order)
+/// 失敗：Result&lt;Order&gt;.Fail(ErrorType.Validation, "Order already cancelled.")
 /// </summary>
 public sealed class Result<T>
 {
     public bool IsSuccess { get; }
     public bool IsFailure => !IsSuccess;
     public T? Value { get; }
-    public string Error { get; }
+    public Error? Error { get; }
 
-    private Result(T? value, bool isSuccess, string error)
+    private Result(T? value, bool isSuccess, Error? error)
     {
         Value = value;
         IsSuccess = isSuccess;
@@ -155,16 +179,20 @@ public sealed class Result<T>
     }
 
     public static Result<T> Ok(T value)
-        => new(value, true, string.Empty);
+        => new(value, true, null);
 
-    public static Result<T> Fail(string error)
+    public static Result<T> Fail(ErrorType type, string message)
+        => new(default, false, new Error(type, message));
+
+    /// <summary>沿用另一個 Result 的錯誤，例如把 Result 的失敗轉成 Result&lt;T&gt;。</summary>
+    public static Result<T> Fail(Error error)
         => new(default, false, error);
 
     /// <summary>
     /// 成功時轉換值；失敗時原樣傳遞錯誤。
     /// </summary>
     public Result<TOut> Map<TOut>(Func<T, TOut> mapper)
-        => IsSuccess ? Result<TOut>.Ok(mapper(Value!)) : Result<TOut>.Fail(Error);
+        => IsSuccess ? Result<TOut>.Ok(mapper(Value!)) : Result<TOut>.Fail(Error!);
 }
 
 /// <summary>
@@ -174,16 +202,17 @@ public sealed class Result
 {
     public bool IsSuccess { get; }
     public bool IsFailure => !IsSuccess;
-    public string Error { get; }
+    public Error? Error { get; }
 
-    private Result(bool isSuccess, string error)
+    private Result(bool isSuccess, Error? error)
     {
         IsSuccess = isSuccess;
         Error = error;
     }
 
-    public static Result Ok() => new(true, string.Empty);
-    public static Result Fail(string error) => new(false, error);
+    public static Result Ok() => new(true, null);
+    public static Result Fail(ErrorType type, string message) => new(false, new Error(type, message));
+    public static Result Fail(Error error) => new(false, error);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -437,7 +466,7 @@ public interface IUnitOfWork
 //     public async Task<Result> HandleAsync(CancelOrderCommand command, CancellationToken cancellationToken = default)
 //     {
 //         var order = await orders.GetByIdAsync(command.OrderId, cancellationToken);
-//         if (order is null) return Result.Fail("Order not found.");
+//         if (order is null) return Result.Fail(ErrorType.NotFound, "Order not found.");
 //
 //         var result = order.Cancel();
 //         if (result.IsFailure) return result;
@@ -493,7 +522,7 @@ public interface IUnitOfWork
 // The handler still owns the only commit point: uow.CommitAsync() commits EF's
 // SaveChanges and this UPDATE together, or rolls both back.
 // Insufficient stock is an expected outcome, not an exception: the method returns
-// false, and the handler returns Result.Fail("Insufficient stock.") without calling
+// false, and the handler returns Result.Fail(ErrorType.Validation, "Insufficient stock.") without calling
 // CommitAsync — the open transaction is rolled back when the scope disposes
 // AppUnitOfWork. TryDeductStockAsync is declared on IProductRepository like any
 // other operation of that aggregate.
@@ -631,7 +660,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     public static Result<Order> Create(string customerId)
 //     {
 //         if (string.IsNullOrWhiteSpace(customerId))
-//             return Result<Order>.Fail("Customer ID is required.");
+//             return Result<Order>.Fail(ErrorType.Validation, "Customer ID is required.");
 //
 //         var order = new Order
 //         {
@@ -647,7 +676,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     public Result AddItem(string productId, int quantity, decimal unitPrice)
 //     {
 //         if (Status != OrderStatus.Pending)
-//             return Result.Fail("Cannot add items to a non-pending order.");
+//             return Result.Fail(ErrorType.Validation, "Cannot add items to a non-pending order.");
 //
 //         _items.Add(new OrderItem(Guid.NewGuid(), productId, quantity, unitPrice));
 //         return Result.Ok();
@@ -656,7 +685,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //     public Result Cancel()
 //     {
 //         if (Status == OrderStatus.Cancelled)
-//             return Result.Fail("Order is already cancelled.");
+//             return Result.Fail(ErrorType.Validation, "Order is already cancelled.");
 //
 //         Status = OrderStatus.Cancelled;
 //         AddDomainEvent(new OrderCancelledEvent(Id));
