@@ -177,7 +177,19 @@
       });
   ```
 - 📡 **API Documentation**: Use `Microsoft.AspNetCore.OpenApi` (`AddOpenApi()`) with **Scalar** (`Scalar.AspNetCore`) for API documentation UI. Do NOT use Swashbuckle or Swagger UI under any circumstance.
-- 📋 **Validation**: Use **FluentValidation** for all request/command/query validation. Validators live in `Application/Validators/`. Package split: `FluentValidation` is referenced by the `Application` project; `FluentValidation.DependencyInjectionExtensions` is referenced by `Api` and registered via `AddValidatorsFromAssembly(typeof(SomeValidator).Assembly)`. At the endpoint layer, invoke validation using `await validator.ValidateAndThrowAsync(request, ct)` before dispatching commands/queries. Never use DataAnnotations for business rule validation — DataAnnotations are permitted only for OpenAPI metadata hints.
+- 📋 **Validation**: Use **FluentValidation** for all request/command/query validation. Validators live in `Application/Validators/`. Package split: `FluentValidation` is referenced by the `Application` project; `FluentValidation.DependencyInjectionExtensions` is referenced by `Api` and registered via `AddValidatorsFromAssembly(typeof(SomeValidator).Assembly)`. At the endpoint layer, call `await validator.ValidateAsync(request, ct)` before dispatching commands/queries; when invalid, return `Results.ValidationProblem(validation.ToDictionary())` — 400 with per-field errors. Never use `ValidateAndThrowAsync`: invalid input is an expected outcome, and an uncaught `ValidationException` surfaces as 500. Never use DataAnnotations for business rule validation — DataAnnotations are permitted only for OpenAPI metadata hints.
+- 🚦 **Error Responses**: Every error body is RFC 7807 Problem Details.
+  - Expected failures come back as `Result`/`Result<T>` carrying `Error(ErrorType, Message)`. The endpoint converts them through `Api/Endpoints/ErrorExtensions.cs` — the only place that maps a type to a status code:
+
+    | `ErrorType` | HTTP | When |
+    |---|---|---|
+    | `Validation` | 400 | Input or business rule not satisfied — duplicates, wrong state (already cancelled), insufficient stock |
+    | `Unauthorized` | 401 | The handler itself authenticates and fails — wrong password at login |
+    | `Forbidden` | 403 | Signed in but not allowed on this resource — editing another user's order |
+    | `NotFound` | 404 | The target resource does not exist |
+  - There is no 409 or 422: every business-rule failure is `Validation` (400).
+  - FluentValidation failures → 400 `ValidationProblem` with per-field errors (see Validation).
+  - Unexpected exceptions → 500 through `UseExceptionHandler()`, never with a stack trace. 401/403 issued by the authentication/authorization middleware get a Problem Details body from `UseStatusCodePages()`; handlers do not re-check what the middleware already enforces.
 - 🗃️ **Caching**: Do not scaffold caching by default. If the project has a confirmed caching need, prefer **`HybridCache`** and avoid direct `IDistributedCache` / `IMemoryCache` usage in application code. `HybridCache` requires the **`Microsoft.Extensions.Caching.Hybrid`** package (it is *not* built into the shared framework) — add it and call `builder.Services.AddHybridCache()` only when caching is actually needed.
 - 🗺️ **Object Mapping**: **AutoMapper is strictly prohibited — no exceptions.** Always use **Mapperly** (`Riok.Mapperly`) — fixed in every project; never ask, never offer an alternative. Source generator; zero runtime overhead, compile-time type safety. Mapper classes live in `Application/Mappers/`. Add to `Application.csproj` with `<PrivateAssets>all</PrivateAssets>` to prevent the analyzer from leaking as a transitive runtime dependency.
 
