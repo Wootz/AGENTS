@@ -243,7 +243,7 @@ namespace YourProject.Domain.Interfaces;
 /// （QueryHandler 使用 IXxxReadRepository）。
 /// 實作位於 Persistence 層（EF Core、Dapper/raw SQL 或其他 provider）。
 /// Repository 以 aggregate 為邊界運作——IQueryable&lt;T&gt; 不得流出 Persistence，
-/// 也不回傳 DTO（那是 IOrderReadRepository 的職責）。
+/// 也不回傳 Query 的 Response（那是 IOrderReadRepository 的職責）。
 /// </summary>
 public interface IOrderRepository
 {
@@ -274,7 +274,7 @@ public interface IOrderRepository
 //  - No GetAllAsync unless the table is genuinely bounded (lookup/reference
 //    data). Unbounded reads belong on the read side with paging.
 //  - Methods return tracked aggregates. Reads that feed a screen go through
-//    IXxxReadRepository in Application/Interfaces/ and return DTOs.
+//    IXxxReadRepository in Application/Interfaces/ and return query Response types.
 //  - Repositories never call SaveChanges — the commit boundary is IUnitOfWork.
 //  - Anemic model: identical shape, declared in Application/Interfaces/, with the
 //    plain POCO entity type in place of the aggregate root.

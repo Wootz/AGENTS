@@ -120,7 +120,6 @@ src/
 │   │   │   ├── Commands/
 │   │   │   ├── Queries/
 │   │   │   ├── EventHandlers/
-│   │   │   ├── Dtos/
 │   │   │   ├── Validators/
 │   │   │   ├── Mappers/
 │   │   │   └── Repositories/          # IXxxRepository / IXxxReadRepository (Anemic)
@@ -493,6 +492,7 @@ Each feature module must define a dedicated static class under `src/<ProjectName
 - Class and method must both be `internal static`
 - Route handler methods must be declared as `private static async Task<IResult>` with a named method (no inline lambdas)
 - Every `Map*` call **must chain** `.WithName()`, `.WithSummary()`, `.WithDescription()`
+- Handlers return `Result`/`Result<T>`; the endpoint unwraps it — success returns `result.Value`, failure returns `Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest)` (RFC 7807). `Result` carries no error kind, so every expected failure maps to 400
 - `Program.cs` only calls `app.Map<Feature>Endpoints()` — no handler logic inside
 
 ```csharp
@@ -516,7 +516,9 @@ internal static class ArticlesEndpoint
         CancellationToken ct)
     {
         var result = await queries.DispatchAsync(new ListArticlesQuery(), ct);
-        return Results.Ok(result);
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
     }
 
     private static async Task<IResult> CreateArticleAsync(
@@ -524,9 +526,11 @@ internal static class ArticlesEndpoint
         ICommandDispatcher commands,
         CancellationToken ct)
     {
-        var result = await commands.DispatchAsync<CreateArticleResponse>(
+        var result = await commands.DispatchAsync(
             new CreateArticleCommand(req.Title, req.Content), ct);
-        return Results.Created($"/api/demo/articles/{result.Id}", result);
+        return result.IsSuccess
+            ? Results.Created($"/api/demo/articles/{result.Value!.Id}", result.Value)
+            : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
     }
 }
 ```
@@ -564,8 +568,11 @@ internal sealed class CreateSupplierEndpoint(ICommandDispatcher commands)
     public override async Task<CreateSupplierResponse> ExecuteAsync(
         CreateSupplierRequest req, CancellationToken ct)
     {
-        var id = await commands.DispatchAsync(new CreateSupplierCommand(req.TaxId, req.Name), ct);
-        return new CreateSupplierResponse(id);
+        var result = await commands.DispatchAsync(new CreateSupplierCommand(req.TaxId, req.Name), ct);
+        if (result.IsFailure)
+            ThrowError(result.Error); // 中止 endpoint，回傳 400 Problem Details
+
+        return new CreateSupplierResponse(result.Value);
     }
 }
 
@@ -573,9 +580,9 @@ internal sealed record CreateSupplierRequest(string TaxId, string Name);
 internal sealed record CreateSupplierResponse(Guid Id);
 ```
 
-For a non-200 outcome (a `Result<T>` failure, say), send explicitly instead of returning — `await Send.ResultAsync(...)` / `ThrowError(...)` — and keep the declared return type.
+A `Result` failure goes through `ThrowError(result.Error)`: it stops the endpoint and sends 400, and with `c.Errors.UseProblemDetails()` (below) the body is RFC 7807 Problem Details — the same contract as the Minimal API variant.
 
-**Wiring in `Program.cs`:** `builder.Services.AddFastEndpoints();` and `app.UseFastEndpoints();` — endpoints are discovered by assembly scan, so there is no per-feature `Map*` call.
+**Wiring in `Program.cs`:** `builder.Services.AddFastEndpoints();` and `app.UseFastEndpoints(c => c.Errors.UseProblemDetails());` — endpoints are discovered by assembly scan, so there is no per-feature `Map*` call.
 
 **Validation:** FastEndpoints auto-runs a `Validator<TRequest>` found in the *endpoint's own* assembly. Validators for commands/queries stay in `Application` per the standard rule; a request-shape validator may sit beside its endpoint. Do not duplicate the same rule in both places.
 
@@ -693,7 +700,7 @@ Mechanics specific to scaffolding:
 - `IUnitOfWork` and the per-aggregate `IXxxRepository` interfaces are defined in `Domain/Interfaces/` (Rich) or `Application/Interfaces/` (Anemic) and implemented in `Persistence/UnitOfWork/` and `Persistence/Repositories/`. `IXxxReadRepository` is defined in `Application/Interfaces/` and implemented in `Persistence/ReadRepositories/`.
 - **The read/write split is mandatory and identical in every deployment.** Handlers never inject a `DbContext` — `Application` cannot reference EF Core, so a concrete context is not even reachable from a handler. Two abstractions always exist:
   - `IXxxRepository` — **write side**, one named interface per aggregate/entity, returns tracked aggregates/entities, used by CommandHandlers only.
-  - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns DTOs/projections, used by QueryHandlers only. It lives in `Application` rather than `Domain` because it returns DTOs, which are an Application concept; `Domain` must not know about them.
+  - `IXxxReadRepository` — **read side**, defined in `Application/Interfaces/`, returns query `Response` types, used by QueryHandlers only. It lives in `Application` rather than `Domain` because it returns query `Response` types, which are an Application concept; `Domain` must not know about them.
 
   Both are implemented in `Persistence` (`Repositories/` and `ReadRepositories/`), the first on `WriteDbContext`, the second on `ReadDbContext`. Whether a replica physically exists is a deployment fact: with none, `ConnectionStrings:Write` and `:Read` hold the same value and the split is logical; adding a replica changes `appsettings` only — no handler, interface, or query body changes.
 
@@ -749,9 +756,9 @@ Mechanics specific to scaffolding:
     // Persistence/ReadRepositories/OrderReadRepository.cs
     public sealed class OrderReadRepository(ReadDbContext db) : IOrderReadRepository
     {
-        public Task<IReadOnlyList<OrderListItemDto>> GetPagedAsync(...) =>
+        public Task<IReadOnlyList<GetOrdersResponse.Item>> GetPagedAsync(...) =>
             db.Orders.AsNoTracking()
-              .Select(o => new OrderListItemDto(o.Id, o.Code, o.Total))
+              .Select(o => new GetOrdersResponse.Item(o.Id, o.Code, o.Total))
               .ToListAsync(cancellationToken);
     }
     ```
@@ -768,7 +775,7 @@ Mechanics specific to scaffolding:
     // to immediately after CreateOrderCommand — must not read a lagging replica.
     public sealed class GetOrderByIdQueryHandler(
         [FromKeyedServices("strong")] IOrderReadRepository orders)
-        : IQueryHandler<GetOrderByIdQuery, Result<OrderDto>> { /* ... */ }
+        : IQueryHandler<GetOrderByIdQuery, Result<GetOrderByIdResponse>> { /* ... */ }
     ```
     When no replica exists both connection strings are identical, so the keyed and default implementations read the same database and the handler behaves the same either way.
   - EF Core migrations and the design-time factory bind to the **Write** connection explicitly, so `dotnet ef` never issues DDL against a replica. With two contexts present `dotnet ef` cannot infer which one to use, so migration commands must name it — `dotnet ef migrations add <Name> --context WriteDbContext` — and only `WriteDbContext` gets a design-time factory:
