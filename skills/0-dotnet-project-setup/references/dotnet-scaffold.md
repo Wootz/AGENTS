@@ -756,10 +756,16 @@ Mechanics specific to scaffolding:
     // Persistence/ReadRepositories/OrderReadRepository.cs
     public sealed class OrderReadRepository(ReadDbContext db) : IOrderReadRepository
     {
-        public Task<IReadOnlyList<GetOrdersResponse.Item>> GetPagedAsync(...) =>
-            db.Orders.AsNoTracking()
-              .Select(o => new GetOrdersResponse.Item(o.Id, o.Code, o.Total))
-              .ToListAsync(cancellationToken);
+        public async Task<GetOrdersResponse> GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken)
+        {
+            var query = db.Orders.AsNoTracking();
+            var items = await query
+                .OrderBy(o => o.Code)
+                .Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(o => new GetOrdersResponse.Item(o.Id, o.Code, o.Total))
+                .ToListAsync(cancellationToken);
+            return new GetOrdersResponse(items, await query.CountAsync(cancellationToken));
+        }
     }
     ```
   - **Strong-consistency queries** (the five cases in `dotnet-rules.md`) must not reach for `WriteDbContext` from the handler — `Application` cannot see it. Register a second implementation of the same read interface bound to the write context and resolve it by key, so the choice stays in `Persistence` and the handler still depends only on an Application-layer abstraction:
