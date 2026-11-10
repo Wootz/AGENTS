@@ -1,6 +1,6 @@
 # AI Agent 全域規範與規格庫 (`~/.agents`)
 
-這個私有專案用來集中管理我所有電腦上的 AI Agent（包含 Antigravity CLI、Codex 和 Claude Code）的最高全域架構規範、多語言技術棧要求、以及 UI/UX 一致性紀律。
+這個專案用來集中管理我所有電腦上的 AI Agent（包含 Antigravity CLI、Codex 和 Claude Code）的最高全域架構規範、多語言技術棧要求、以及 UI/UX 一致性紀律。
 
 ## 安裝非自建的 Skill
 
