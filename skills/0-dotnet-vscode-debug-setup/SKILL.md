@@ -93,6 +93,8 @@ Three tasks. `build` uses `"type": "process"` (VS Code's standard form for .NET)
 
 **Do not build the frontend with `pnpm build`.** In most Vite projects `package.json` defines build as `vue-tsc -b && vite build` (or `tsc && vite build`); an appended `--outDir` is swallowed by the type-check tool in front and has no effect — the build succeeds but still writes to `dist/`, which looks like the setting is ignored for no reason. Calling `vite` directly avoids this at the cost of skipping type checking (which makes debug startup faster; the real publish still runs the full pipeline).
 
+The templates use pnpm. A project on npm or yarn is the exception: keep its package manager and swap the two commands (`npx vite build …`, `npm --prefix frontend run dev`).
+
 The `endsPattern` of an `isBackground` task must match the dev server's real output, or VS Code waits forever.
 
 ## Step 3: launch.json

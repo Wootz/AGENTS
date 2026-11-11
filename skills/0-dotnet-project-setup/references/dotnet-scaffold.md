@@ -80,7 +80,8 @@ Key principles:
 │   │   ├── UnitOfWork/
 │   │   └── <ProjectName>.Persistence.csproj
 │   └── <ProjectName>.Api/                     # Entry point — routes, middleware
-│       ├── Endpoints/                          # incl. ErrorExtensions.cs — the only ErrorType → HTTP status mapping
+│       ├── Endpoints/                          # IEndpoint.cs, ErrorExtensions.cs (the only ErrorType → HTTP status mapping)
+│       │   └── {Group}/                        # {Group}Group.cs (Route Group) + one class per endpoint
 │       ├── Middlewares/
 │       ├── Program.cs
 │       ├── appsettings.json
@@ -133,7 +134,7 @@ src/
 │   ├── DependencyInjection.cs
 │   └── …grouped by external resource kind (Mail/, Storage/, ExternalServices/)
 └── <ProjectName>.Api/
-    └── Endpoints/{Module}/
+    └── Endpoints/{Module}/{Group}/    # one folder per Route Group, nested under its module
 ```
 
 **The asymmetry is deliberate.** `Persistence` shares one model (the two contexts inherit it from `AppDbContext`) and one migration history, and cross-module queries are normal — splitting it by module creates folders that cannot own their schema. `Infrastructure` groups by external resource (mail, storage, each integrated system), which does not map one-to-one onto business modules. Only `Domain`, `Application`, and the endpoint layer get `Modules/`.
@@ -437,7 +438,7 @@ try
 
     app.UseHttpsRedirection();
 
-    // TODO: 在此對應 endpoint group
+    // TODO: 在此掛載各資源的 Route Group，例如 app.MapArticlesGroup();
 
     app.Run();
 }
@@ -492,32 +493,71 @@ Replace the `UseSerilog(...)` call and the whole `ActivityListener` block of the
 
 ## Endpoint Pattern
 
-Each feature module must define a dedicated static class under `src/<ProjectName>.Api/Endpoints/` and mount routes via an extension method. Naming convention: `<Feature>Endpoint` class, `Map<Feature>Endpoints` method.
+One class per API endpoint, mounted through a Route Group. An endpoint maps 1:1 to a command or query, so each file changes for one reason and the `Endpoints/` tree mirrors `Commands/` and `Queries/`.
+
+```
+Api/Endpoints/
+├── IEndpoint.cs                    # IEndpoint + MapEndpoint<T>()
+├── ErrorExtensions.cs
+└── Articles/
+    ├── ArticlesGroup.cs            # Route Group: prefix, tags, group-wide auth; lists its endpoints
+    ├── ListArticlesEndpoint.cs
+    └── CreateArticleEndpoint.cs    # + its request record
+```
 
 **Rules:**
-- Class and method must both be `internal static`
-- Route handler methods must be declared as `private static async Task<IResult>` with a named method (no inline lambdas)
-- Every `Map*` call **must chain** `.WithName()`, `.WithSummary()`, `.WithDescription()`
-- Handlers return `Result`/`Result<T>`; the endpoint unwraps it — success returns `result.Value`, failure returns `result.Error!.ToProblem()` from `Endpoints/ErrorExtensions.cs` (below), the only place that maps `ErrorType` to a status code
-- `Program.cs` only calls `app.Map<Feature>Endpoints()` — no handler logic inside
+- **One folder per Route Group**: `Endpoints/<Feature>/` holds that group's `<Feature>Group.cs` and all of its endpoint files, and nothing from another group. In the module-grouped layout the group folder nests under its module: `Endpoints/<Module>/<Feature>/`. Only the shared files (`IEndpoint.cs`, `ErrorExtensions.cs`) sit directly under `Endpoints/` — never an endpoint
+- Endpoint class: `<Verb><Feature>Endpoint`, `internal sealed`, implements `IEndpoint`. `Map` holds exactly one `Map*` call pointing at a named `private static async Task<IResult> HandleAsync` (no inline lambdas)
+- The route is relative to the group; every `Map*` call **must chain** `.WithName()`, `.WithSummary()`, `.WithDescription()`
+- A request record lives in its endpoint's file; the response is the command/query's own `XxxResponse`
+- `HandleAsync` validates, dispatches and unwraps — success returns `result.Value`, failure returns `result.Error!.ToProblem()` from `Endpoints/ErrorExtensions.cs` (below), the only place that maps `ErrorType` to a status code
+- Group file: `<Feature>Group` with a `Map<Feature>Group` extension. It calls `MapGroup` once — route prefix, `.WithTags()`, group-wide auth and filters — and lists every endpoint with `MapEndpoint<T>()`. The list is explicit (no assembly scanning): the group file shows the resource's whole API surface, and an endpoint left off it returns 404, which its integration test catches
+- `Program.cs` only calls `app.Map<Feature>Group()` — no routes and no handler logic inside; `Testing Setup` → Endpoint location guard enforces it
+- Keep each endpoint file small: one endpoint and its request record. Shared helpers go to their own file under `Endpoints/`, never into an endpoint or group file
 
+`Endpoints/IEndpoint.cs`:
 ```csharp
-internal static class ArticlesEndpoint
+internal interface IEndpoint
 {
-    internal static void MapArticlesEndpoints(this IEndpointRouteBuilder app)
+    static abstract void Map(IEndpointRouteBuilder group);
+}
+
+internal static class EndpointExtensions
+{
+    internal static IEndpointRouteBuilder MapEndpoint<TEndpoint>(this IEndpointRouteBuilder group)
+        where TEndpoint : IEndpoint
     {
-        app.MapGet("/api/demo/articles", ListArticlesAsync)
-           .WithName("ListDemoArticles")
-           .WithSummary("List Demo Articles")
-           .WithDescription("Retrieve all articles from SQL Server.");
-
-        app.MapPost("/api/demo/articles", CreateArticleAsync)
-           .WithName("CreateDemoArticle")
-           .WithSummary("Create Demo Article")
-           .WithDescription("Insert a new article into SQL Server.");
+        TEndpoint.Map(group);
+        return group;
     }
+}
+```
 
-    private static async Task<IResult> ListArticlesAsync(
+`Endpoints/Articles/ArticlesGroup.cs`:
+```csharp
+internal static class ArticlesGroup
+{
+    internal static void MapArticlesGroup(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/articles").WithTags("Articles");
+
+        group.MapEndpoint<ListArticlesEndpoint>()
+             .MapEndpoint<CreateArticleEndpoint>();
+    }
+}
+```
+
+`Endpoints/Articles/ListArticlesEndpoint.cs`:
+```csharp
+internal sealed class ListArticlesEndpoint : IEndpoint
+{
+    public static void Map(IEndpointRouteBuilder group) => group
+        .MapGet("/", HandleAsync)
+        .WithName("ListArticles")
+        .WithSummary("List articles")
+        .WithDescription("Returns all articles.");
+
+    private static async Task<IResult> HandleAsync(
         IQueryDispatcher queries,
         CancellationToken ct)
     {
@@ -526,19 +566,39 @@ internal static class ArticlesEndpoint
             ? Results.Ok(result.Value)
             : result.Error!.ToProblem();
     }
+}
+```
 
-    private static async Task<IResult> CreateArticleAsync(
+`Endpoints/Articles/CreateArticleEndpoint.cs`:
+```csharp
+internal sealed class CreateArticleEndpoint : IEndpoint
+{
+    public static void Map(IEndpointRouteBuilder group) => group
+        .MapPost("/", HandleAsync)
+        .WithName("CreateArticle")
+        .WithSummary("Create an article")
+        .WithDescription("Creates an article and returns it.");
+
+    private static async Task<IResult> HandleAsync(
         CreateArticleRequest req,
+        IValidator<CreateArticleCommand> validator,
         ICommandDispatcher commands,
         CancellationToken ct)
     {
-        var result = await commands.DispatchAsync(
-            new CreateArticleCommand(req.Title, req.Content), ct);
+        var command = new CreateArticleCommand(req.Title, req.Content);
+
+        var validation = await validator.ValidateAsync(command, ct);
+        if (!validation.IsValid)
+            return Results.ValidationProblem(validation.ToDictionary());
+
+        var result = await commands.DispatchAsync(command, ct);
         return result.IsSuccess
-            ? Results.Created($"/api/demo/articles/{result.Value!.Id}", result.Value)
+            ? Results.Created($"/api/articles/{result.Value!.Id}", result.Value)
             : result.Error!.ToProblem();
     }
 }
+
+internal sealed record CreateArticleRequest(string Title, string Content);
 ```
 
 `Endpoints/ErrorExtensions.cs` — the mapping table from `dotnet-rules.md` → Error Responses, written once:
@@ -561,16 +621,17 @@ internal static class ErrorExtensions
 
 Route mounting section in `Program.cs`:
 ```csharp
-// 對應 endpoint
-app.MapArticlesEndpoints();
+// 掛載 Route Group（每個資源一個）
+app.MapArticlesGroup();
 ```
 
 ### FastEndpoints variant
 
-When FastEndpoints is chosen (rank 2 in SKILL.md item 10), these conventions replace the ones above. Everything else — CQRS dispatch, validators living in `Application`, the layer boundaries — is unchanged.
+When FastEndpoints is chosen (SKILL.md item 10), these conventions replace the ones above. Everything else — CQRS dispatch, validators living in `Application`, the layer boundaries — is unchanged.
 
 **Rules:**
-- One endpoint per class, named `<Verb><Feature>Endpoint` (`CreateSupplierEndpoint`), under `Endpoints/{Module}/`
+- One endpoint per class, named `<Verb><Feature>Endpoint` (`CreateSupplierEndpoint`), under `Endpoints/{Group}/`
+- Every endpoint joins its Route Group with `Group<TGroup>()` in `Configure()`; the `Group` subclass owns the route prefix, tags and group-wide auth, so `Post("/")` is relative to it
 - Derive from `Endpoint<TRequest, TResponse>`, or `EndpointWithoutRequest<TResponse>` when there is no request body
 - `Configure()` declares the route, auth, and OpenAPI metadata; `ExecuteAsync()` dispatches to CQRS and does nothing else
 - **`ExecuteAsync` returns `Task<TResponse>`** in FastEndpoints 8.x — return the response object directly. The older `Task` + `await SendOkAsync(...)` pattern found in many online samples does **not** compile against these generic base classes (CS0508)
@@ -604,7 +665,7 @@ internal sealed record CreateSupplierRequest(string TaxId, string Name);
 internal sealed record CreateSupplierResponse(Guid Id);
 ```
 
-A `Result` failure goes through `ThrowError(result.Error!.Message, result.Error.ToStatusCode())`: it stops the endpoint and sends the mapped status, and with `c.Errors.UseProblemDetails()` (below) the body is RFC 7807 Problem Details. `ToStatusCode()` comes from the same `Endpoints/ErrorExtensions.cs` as the Minimal API variant (`ToProblem()` is unused here).
+A `Result` failure goes through `ThrowError(result.Error!.Message, result.Error.ToStatusCode())`: it stops the endpoint and sends the mapped status, and with `c.Errors.UseProblemDetails()` (below) the body is RFC 7807 Problem Details. `ToStatusCode()` comes from the same `Endpoints/ErrorExtensions.cs` as the default variant (`ToProblem()` is unused here).
 
 **Wiring in `Program.cs`:** `builder.Services.AddFastEndpoints();` and `app.UseFastEndpoints(c => c.Errors.UseProblemDetails());` — endpoints are discovered by assembly scan, so there is no per-feature `Map*` call.
 
@@ -612,7 +673,7 @@ A `Result` failure goes through `ThrowError(result.Error!.Message, result.Error.
 
 **Two things to get right:**
 
-1. **Zero endpoints is a startup failure.** `AddFastEndpoints()` throws `InvalidOperationException: FastEndpoints was unable to find any endpoint declarations!` when the assembly declares none — the host never builds and every integration test fails with a misleading error. Minimal API has no such constraint. If the first scaffold has no business endpoints yet, ship a `/health` endpoint (which a K8s/Cloud Run deployment needs regardless) so the assembly is never empty.
+1. **Zero endpoints is a startup failure.** `AddFastEndpoints()` throws `InvalidOperationException: FastEndpoints was unable to find any endpoint declarations!` when the assembly declares none — the host never builds and every integration test fails with a misleading error. The default variant has no such constraint. If the first scaffold has no business endpoints yet, ship a `/health` endpoint (which a K8s/Cloud Run deployment needs regardless) so the assembly is never empty.
 2. **OpenAPI metadata comes from `Description(b => ...)`**, not from `.WithName()` chained on a `Map*` call. FastEndpoints also ships its own NSwag-based generator; do **not** enable it alongside `Microsoft.AspNetCore.OpenApi` — pick one document source. `AddOpenApi()` + `MapOpenApi()` with the metadata above is verified working (`/openapi/v1.json` serves correctly); richer cases (multiple response types, `ProducesProblem`, file upload) have not been verified and should be checked before relying on them.
 
 ---
@@ -678,7 +739,7 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `AggregateRoot<TId>` implementing `IHasDomainEvents` — `DomainEvents` collection and `ClearDomainEvents()` (`Domain/Entities/`)
 - `Entity<TId>` for non-root child entities (`Domain/Entities/`)
 - `ValueObject` abstract base — prefer `record` types for simple value objects (`Domain/ValueObjects/`)
-- `Result<T>`, `Result`, `Error` and `ErrorType` for domain operation outcomes (`Domain/Common/`) — if Result Pattern enabled
+- `Result<T>`, `Result`, `Error` and `ErrorType` for domain operation outcomes (`Domain/Common/`)
 - Example Aggregate Root with factory method, behaviour methods, and domain events
 - Rich Domain Services, if scaffolded, are pure domain logic and do not inject repositories. Application handlers load required aggregates and pass them into domain methods/services.
 
@@ -687,7 +748,7 @@ Refer to `references/dotnet-domain-template.cs` (same directory as this file) fo
 - `IUnitOfWork` — same persistence-agnostic `CommitAsync(CancellationToken)` contract in `Application/Interfaces/`
 - Concrete POCO entities in `Domain/Entities/` with no base class
 - Capability-named Domain Services in `Domain/DomainServices/` (only where shared logic exists) — pure logic; they inject **no repositories and no dispatcher**, only custom domain capability interfaces if genuinely needed. Handlers load the data and pass it in.
-- `Result<T>`, `Result`, `Error` and `ErrorType` in `Domain/Common/` — if Result Pattern enabled
+- `Result<T>`, `Result`, `Error` and `ErrorType` in `Domain/Common/`
 - If Domain Events enabled: also scaffold `IDomainEvent`, `DomainEvent` (`Domain/Events/`), `IDomainEventDispatcher`, `IDomainEventHandler<TEvent>` (`Application/Interfaces/`), and `DomainEventDispatcher` in `Infrastructure/`
 - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject`
 
@@ -836,6 +897,46 @@ Mechanics specific to scaffolding:
 
 ---
 
+## GUID Keys
+
+IDs are UUID V7 assigned in application code (`dotnet-rules.md` → GUID/UUID Strategy). The mapping differs by provider.
+
+**SQL Server** — add `Persistence/Configurations/GuidKeyExtensions.cs` and call `HasGuidKey()` in every entity configuration with a GUID key:
+
+```csharp
+internal static class GuidKeyExtensions
+{
+    /// <summary>
+    /// Guid 主鍵設為非叢集，另以 IDENTITY 的 shadow 欄位 ClusterKey 作為叢集索引。
+    /// SQL Server 的 uniqueidentifier 排序與 UUID V7 的時間順序不一致，直接叢集會造成索引碎裂。
+    /// </summary>
+    internal static void HasGuidKey<T>(this EntityTypeBuilder<T> builder, Expression<Func<T, object?>> key)
+        where T : class
+    {
+        builder.HasKey(key).IsClustered(false);
+        builder.Property<long>("ClusterKey").UseIdentityColumn();
+        builder.HasIndex("ClusterKey").IsUnique().IsClustered();
+    }
+}
+```
+
+```csharp
+internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
+{
+    public void Configure(EntityTypeBuilder<Order> builder)
+    {
+        builder.HasGuidKey(x => x.Id);
+        builder.Property(x => x.Id).ValueGeneratedNever(); // ID 由應用程式以 Guid.CreateVersion7() 指定
+    }
+}
+```
+
+The generated table has `PRIMARY KEY NONCLUSTERED ([Id])` and a unique clustered index on `[ClusterKey] bigint IDENTITY`.
+
+**PostgreSQL** — no extension: `builder.HasKey(x => x.Id);` plus the same `ValueGeneratedNever()`.
+
+---
+
 ## Environment & Configuration
 
 `appsettings.json` (production defaults):
@@ -929,6 +1030,36 @@ If automated auth tests require test backdoors, add a non-production-only `Testi
 - The **IntegrationTests** project file must use `Microsoft.NET.Sdk.Web` (`<Project Sdk="Microsoft.NET.Sdk.Web">`) so `WebApplicationFactory` resolves the ASP.NET Core host — this is the one setup detail that is easy to miss.
 - Packages per the scaffold command list above (xUnit + NSubstitute; IntegrationTests also gets `Microsoft.AspNetCore.Mvc.Testing`).
 - `Program.cs` must end with `public partial class Program;` (see the entry point template) or `WebApplicationFactory<Program>` will not compile.
+
+### Endpoint location guard
+
+Add `tests/<ProjectName>.IntegrationTests/EndpointLocationTests.cs` in the first scaffold (default endpoint variant). It fails when any route in the `Api` assembly is mapped outside an `Endpoints` class — a lambda in `Program.cs`, a second handler in a group file, a lambda inside an endpoint:
+
+```csharp
+public sealed class EndpointLocationTests(WebApplicationFactory<Program> factory)
+    : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public void 所有路由都定義在_Endpoints_目錄下的_Endpoint_類別()
+    {
+        using var client = factory.CreateClient(); // 啟動 host，路由才會註冊完成
+        var apiAssembly = typeof(Program).Assembly;
+
+        var offenders = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .Select(endpoint => endpoint.Metadata.GetMetadata<MethodInfo>())
+            .Where(method => method?.DeclaringType?.Assembly == apiAssembly)
+            .Where(method => method!.DeclaringType!.IsNested // lambda 會編譯成巢狀類別
+                || method.DeclaringType.Namespace?.StartsWith("<ProjectName>.Api.Endpoints", StringComparison.Ordinal) != true
+                || !method.DeclaringType.Name.EndsWith("Endpoint", StringComparison.Ordinal))
+            .Select(method => $"{method!.DeclaringType!.FullName}.{method.Name}")
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+}
+```
+
+Framework routes (OpenAPI, Scalar) belong to other assemblies and are ignored. Under the FastEndpoints variant this test is not needed: the framework only discovers `Endpoint<>` classes.
 
 ### WebApplicationFactory — two traps that cost real debugging time
 

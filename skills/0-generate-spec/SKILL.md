@@ -41,6 +41,8 @@ This beats "no file until the requirements are confirmed": the skeleton takes sh
 
 ## Review the SRS: raise risks and concerns
 
+The SRS is whatever the user provides. When the project has one under `docs/srs/` (written by `0-pm-05-generate-srs`), use the latest version and cite its `REQ-` IDs in the Spec's 來源; a project without it is normal and needs nothing extra.
+
 The SRS is the SA's deliverable, but **"delivered" does not mean "problem-free"**. Writing the Spec is the first time the requirements are examined line by line, and you will see things the SA may not have seen while writing. When you see them, say so.
 
 This is different from `[NEEDS CLARIFICATION]`:

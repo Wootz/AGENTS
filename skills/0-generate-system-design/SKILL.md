@@ -54,7 +54,7 @@ docs/architecture/
 Read, for the scope:
 
 1. **Code and config** — project files, entry points, persistence configuration, endpoint definitions, deployment scripts, `appsettings*.json` / `.env.example` / CI files. Read config for **names and shapes only**; secrets and connection strings never enter the document.
-2. **Existing records**, whichever exist: `docs/specs/`, `docs/plans/`, `docs/adr/`, `GLOSSARY.md`, SRS or requirement files, `README.md`, the existing system design document, `git log` messages, this conversation.
+2. **Existing records**, whichever exist: `docs/specs/`, `docs/plans/`, `docs/adr/`, `GLOSSARY.md`, SRS or requirement files (including `docs/sow/`, `docs/srs/`, `docs/change-requests/` when the project has them), `README.md`, the existing system design document, `git log` messages, this conversation.
 
 Where a plan disagrees with the code, the code wins for structure; note each gap for the delivery report.
 

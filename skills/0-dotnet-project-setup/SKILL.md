@@ -74,25 +74,25 @@ Ask these in the same upfront message and include the recommended default. If th
    - ✅ **Also supported for Anemic Domain Model** — the Application handler dispatches events explicitly after the use case commit succeeds. No `AggregateRoot` is needed. Recommended when the Anemic model still has meaningful state transitions that require decoupled in-process side effects (emails, audit logs, projections).
    - ⚠️ **Skip if the domain has no meaningful state transitions that trigger side effects** — unnecessary complexity for simple CRUD flows.
    - If enabled: see Step 3 for the full list of files to scaffold.
-8. **Result Pattern** — **do not ask; always enabled.** Domain operations return `Result<T>` for expected business failures instead of throwing. This applies to Anemic and CRUD services too — "record not found", "email already taken", and "insufficient stock" are expected outcomes, and exceptions are for the unexpected. Scaffold `Domain/Common/Result.cs` from `references/dotnet-domain-template.cs`.
-   - Infrastructure faults (DB unreachable, serialization errors) still throw — `Result` is for business outcomes only.
+8. **Result Pattern** — **fixed; never asked, not optional.** Outward-facing results are `Result`; components may throw:
+   - **Outward (fixed)**: every command/query handler returns `Result`/`Result<T>` — the contract `Application` exposes to `Api`. Expected business outcomes ("record not found", "email already taken", "insufficient stock") travel in it, under both domain models.
+   - **Components (free)**: entities, value objects, Domain Services and Infrastructure may return `Result` or throw, whichever reads better. The handler owns the conversion: an expected outcome that a component signals by throwing is prevented by a check or caught in the handler and returned as a failed `Result`.
+   - **Uncaught exceptions are 500**: infrastructure faults (DB unreachable, serialization errors) and bugs are never wrapped in `Result`.
    - A failure carries `Error(ErrorType, Message)`; `ErrorType` is `Validation` (400), `Unauthorized` (401), `Forbidden` (403), `NotFound` (404) — no 409/422, business-rule failures are `Validation`. The API layer maps it in one place, `Api/Endpoints/ErrorExtensions.cs`. Full table in `references/dotnet-rules.md` → Error Responses.
-   - **Who returns it depends on the domain model.** Rich: aggregate methods and Domain Services (`order.Cancel()` → `Result`). Anemic: the entities are POCOs with no methods, so the **command/query handlers** return it, plus any Domain Service that exists. `Result<T>` still lives in `Domain/Common/` under both — it is a domain vocabulary type, not a persistence or transport concern, and the endpoint layer translates it (typically to RFC 7807 Problem Details).
-   - Listed in the confirmation summary (Step 1.5) so the user can opt out there.
+   - `Result<T>` lives in `Domain/Common/` under both models — it is a domain vocabulary type, not a persistence or transport concern. Scaffold it from `references/dotnet-domain-template.cs`.
 9. **Event-Driven Design (EDD / Integration Events)** — ask whether the system needs event-driven communication between services or bounded contexts. Calibrate the recommendation based on the project nature described in item 0:
    - ✅ **Recommend enabling when**: microservices architecture; integration with external platforms (payment gateways, notification services, logistics); async workflows where services must react to each other's state changes; high-decoupling requirements between bounded contexts.
    - ❌ **Recommend skipping when**: simple monolith or internal tool with no inter-service communication; all business flows are synchronous and self-contained; team lacks message broker operational experience and the project doesn't justify the overhead.
    - Compatible with **both** Rich and Anemic Domain Models — Integration Events are an Application/Infrastructure concern, not a domain modelling concern.
    - If enabled: scaffold only the minimal event contracts needed by the confirmed use case, such as `Application/IntegrationEvents/` and `Application/Interfaces/IEventBus.cs`, plus a broker-specific implementation in `Infrastructure/`. Ask which message broker to target (RabbitMQ, Azure Service Bus, Kafka, etc.).
-10. **Endpoint framework** — ordered preference, not a fixed default. Recommend the highest-ranked option that fits and state why:
+10. **Endpoints** — **one class per API endpoint, mounted through Route Groups; fixed, never asked.** An endpoint maps 1:1 to a command or query. Inline lambdas in `Program.cs`, several endpoints in one class, and MVC Controllers are never scaffolded. Only the implementation is a choice:
 
-   | Rank | Option | When |
-   |------|--------|------|
-   | 1 | **Minimal API route groups** *(default)* | Normal case — endpoint count is manageable |
-   | 2 | **FastEndpoints** | Many endpoints whose rules differ materially (one resource routed through different approval flows by type), where framework-enforced one-endpoint-one-class isolation is worth the dependency |
-   | 3 | **MVC Controller** | Only to match an existing solution, or a real MVC dependency (View rendering) |
+   | Option | When |
+   |--------|------|
+   | **Endpoint classes + Route Groups** *(default — no package)* | Normal case. Each endpoint is a class implementing `IEndpoint`; one group file per resource owns the route prefix and shared metadata, and lists its endpoints |
+   | **FastEndpoints** | The user asks for it, or its extras (request binding and validation pipeline, pre/post processors) are worth the dependency. Same one-class-per-endpoint shape, grouped with `Group<T>` |
 
-   Never propose Controllers yourself — accept them only to match an existing codebase. Whichever is chosen, the conventions in `references/dotnet-scaffold.md` → Endpoint Pattern apply; it covers Minimal API and FastEndpoints.
+   Both follow `references/dotnet-scaffold.md` → Endpoint Pattern.
 11. **Object mapper** — **fixed: always Mapperly; never ask and never offer an alternative.** Source generator: zero runtime overhead, compile-time type safety, mapping errors caught at build time.
    - 🚫 **AutoMapper is strictly forbidden** regardless of user preference.
 12. **Logging, Tracing, Metrics** — **all three mandatory; never ask whether to include them.** Logging is Serilog; tracing and metrics use the built-in .NET APIs (`Activity`/`ActivitySource`, `Meter`) and need no package. Logs link to traces by `{TraceId}`/`{SpanId}` in the Serilog output templates (`references/dotnet-rules.md` → Logging, Tracing & Metrics).
@@ -104,7 +104,7 @@ Ask these in the same upfront message and include the recommended default. If th
 
 ⚠️ **Mandatory. Do not run `scripts/scaffold.sh` until the user has replied to this summary.**
 
-Several items above are applied without being asked (Result Pattern, Minimal API, OpenTelemetry none). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
+Several items above are applied without being asked (Endpoint classes + Route Groups, OpenTelemetry none). Silent defaults are only acceptable if the user gets one clear chance to reverse them, so present everything that was decided — asked *and* defaulted — as a single compact summary and wait for confirmation.
 
 Render it as a table with a **Source** column so defaults are visually distinct from the user's own answers:
 
@@ -117,9 +117,9 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 | DB topology        | CQRS + Write/Read split, two DbContexts | fixed |
 | Domain model       | Anemic (Clean Arch + CQRS) | default |
 | Domain Events      | Enabled                  | you       |
-| Result Pattern     | Enabled                  | default   |
+| Result Pattern     | Handlers return Result   | fixed     |
 | EDD                | Skipped                  | you       |
-| Endpoints          | Minimal API route groups | default   |
+| Endpoints          | Endpoint classes + Route Groups | default |
 | Object mapper      | Mapperly                 | fixed     |
 | Logging            | Serilog (File + Console) | fixed     |
 | Tracing / Metrics  | Built-in (Activity / Meter) | fixed  |
@@ -129,7 +129,7 @@ Render it as a table with a **Source** column so defaults are visually distinct 
 
 Then ask plainly: *"Scaffold with these settings, or change any of them first?"*
 
-- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split, Mapperly, Serilog, Tracing/Metrics — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; Result Pattern off; FastEndpoints; OpenTelemetry via OTLP).
+- Anything marked `default` is changeable (rows marked `fixed` — CQRS and the read/write split, Result Pattern, one class per endpoint, Mapperly, Serilog, Tracing/Metrics — are not) — say so explicitly, and name the alternatives for the silent defaults (Rich Domain Model / DDD; FastEndpoints; OpenTelemetry via OTLP).
 - If the user changes something, re-render the table with the change applied and confirm again.
 - "Use sensible defaults" earlier in the conversation does **not** skip this step — it fills the table in, and the table is still shown.
 
@@ -142,10 +142,10 @@ When the user explicitly authorizes defaults, use:
 - Anemic Domain Model (Clean Architecture + CQRS, eShopOnWeb style) unless the user describes invariants complex enough to justify Rich.
 - Domain Events enabled for Rich Domain Model; skipped for Anemic CRUD unless side effects exist.
 - No Domain Services scaffolded up front under Anemic — added only when shared domain logic appears, named by capability.
-- Result Pattern always enabled (not a defaults-only choice — see item 8).
+- Result Pattern is fixed (item 8).
 - EDD skipped unless there is cross-service or asynchronous integration.
 - CQRS + read/write split is fixed (item 4): `WriteDbContext` on `ConnectionStrings:Write`, `ReadDbContext` on `ConnectionStrings:Read`, same value when no replica exists. CommandHandlers use `IXxxRepository`; QueryHandlers use `IXxxReadRepository`; neither ever injects a `DbContext` or the other family. Routing rules (Command ⇒ Write always; Query ⇒ Read by default; the closed list of five cases where a query must use Write) are in `references/dotnet-rules.md` → CQRS Implementation.
-- Minimal API route groups.
+- Endpoint classes + Route Groups (item 10).
 - Mapperly is fixed (item 11).
 - Serilog, tracing and metrics are fixed (item 12); OpenTelemetry left as none unless the user names an observability backend.
 - Auth: ask if not specified. Do not assume public or no-auth for production APIs.
@@ -204,7 +204,7 @@ Execute the scaffold in this order:
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation of `IDomainEventDispatcher`; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
      DI registration uses assembly scanning (see the DI registration example in `dotnet-domain-template.cs`). Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement the matching `IDomainEventHandler<TEvent>`.
-   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/`.
+   - Copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/` (Step 1 item 8).
 
    **Anemic Domain Model:**
    - **Do NOT** scaffold `AggregateRoot<TId>`, `Entity<TId>`, or `ValueObject` — these building blocks are not used in the Anemic model.
@@ -223,7 +223,7 @@ Execute the scaffold in this order:
      | `Infrastructure/DomainEventDispatcher.cs` | `<ProjectName>.Infrastructure` | In-process implementation; resolves and calls every `IDomainEventHandler<TEvent>` through DI |
 
      Application handlers call `DispatchAsync()` manually after the repository operations finish and the use case commits successfully (Domain Services never dispatch events). DI registration uses assembly scanning. Application-layer event handlers live in `<ProjectName>.Application/EventHandlers/` and implement `IDomainEventHandler<TEvent>`.
-   - If Result Pattern was enabled (Step 1 item 8): copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/`.
+   - Copy `Result<T>`, `Result`, `Error` and `ErrorType` from `dotnet-domain-template.cs` into `Domain/Common/` (Step 1 item 8).
 
    **Both models:**
    - Scaffold `Persistence/AppDbContext.cs`, `WriteDbContext.cs`, `ReadDbContext.cs`, and `WriteDbContextFactory.cs` verbatim from `references/dotnet-scaffold.md` → CQRS Pattern, plus `DependencyInjection.cs` (`AddPersistence()`) registering both contexts, `AppUnitOfWork` (scoped, `IUnitOfWork` mapped to it), and every repository/read repository. Never register `AppDbContext` itself.
@@ -262,7 +262,10 @@ Before declaring the scaffold complete, verify:
 - [ ] Domain model style consistently applied (Rich: private setters + factory methods; Anemic: public setters only)
 - [ ] If Domain Events enabled: Rich model dispatches collected aggregate events after `IUnitOfWork.CommitAsync()` commits successfully; Anemic model dispatches explicit events only after the use case commit succeeds
 - [ ] In-process domain event handlers do not perform irreversible/reliability-critical side effects directly; external side effects use explicit Application orchestration or retryable background work only when needed
-- [ ] If Result Pattern enabled: `Result<T>` in `Domain/Common/`; domain methods return `Result` instead of throwing for business violations
+- [ ] `Result<T>` in `Domain/Common/`; every command/query handler returns `Result`/`Result<T>`, and no expected business outcome reaches an endpoint as an exception
+- [ ] One class per API endpoint, filed in its Route Group's folder `Api/Endpoints/{Group}/` (no endpoint directly under `Endpoints/`), each listed in that folder's Route Group file; `Program.cs` calls only the group `Map*Group()` methods; no Controllers, no inline lambdas
+- [ ] Every GUID ID is assigned in application code with `Guid.CreateVersion7()`; keys are `ValueGeneratedNever()`; no `Guid.NewGuid()` and no database-generated ID; on SQL Server every GUID-keyed table uses `HasGuidKey()` (nonclustered PK + `ClusterKey` clustered index)
+- [ ] `EndpointLocationTests` exists and passes (default endpoint variant)
 - [ ] Errors are RFC 7807 Problem Details end to end: `Api/Endpoints/ErrorExtensions.cs` is the only `ErrorType` → status mapping (400/401/403/404, no 409); endpoints validate with `ValidateAsync` + `Results.ValidationProblem(...)`, never `ValidateAndThrowAsync`; `Program.cs` registers `AddProblemDetails()`, `UseExceptionHandler()` and `UseStatusCodePages()`
 - [ ] If Event-Driven Design enabled: `Application/IntegrationEvents/` scaffolded, `IEventBus` defined in `Application/Interfaces/`, stub implementation in `Infrastructure/`
 - [ ] Exactly one DB provider package is added in `Api`, matching the user-selected database
@@ -305,6 +308,9 @@ These hold regardless of what the user asks:
 - **Domain-event side effects**: in-process handlers do no irreversible/reliability-critical work directly; use Application orchestration or idempotent retryable background work. *(rules.md → Event-Driven Design)*
 - **Testing**: only `UnitTests` (xUnit + NSubstitute) and `IntegrationTests` (`WebApplicationFactory`, Web SDK). Assert **only with xUnit's built-in `Assert`** — no third-party assertion library; **FluentAssertions forbidden in every version**, older releases included (commercial license). Meaningful tests required — placeholders don't count. *(rules.md → Testing Guidelines)*
 - **Timezone confirmed before any DB schema/migration** — never assume UTC. *(rules.md → Timezone & Time Abstraction)*
+- **Endpoints**: one class per API endpoint, one file each under `Api/Endpoints/`, mounted through Route Groups; `Program.cs` maps no route; no Controllers, no inline lambdas. *(rules.md → Web Framework)*
+- **Result Pattern**: every command/query handler returns `Result`/`Result<T>`; components beneath may throw, and the handler converts expected outcomes. *(rules.md → Error Responses)*
+- **IDs**: UUID V7 assigned in application code (`Guid.CreateVersion7()`), never generated by the database; on SQL Server the GUID primary key is nonclustered with a `ClusterKey` identity clustered index. *(rules.md → GUID/UUID Strategy)*
 - **API docs**: `Microsoft.AspNetCore.OpenApi` + **Scalar** only — no Swashbuckle/Swagger. *(rules.md → API Documentation)*
 - **Validation**: **FluentValidation** only; no DataAnnotations for business rules. *(rules.md → Validation)*
 - **Object mapping**: **AutoMapper forbidden** — Mapperly only (fixed). *(rules.md → Object Mapping)*
