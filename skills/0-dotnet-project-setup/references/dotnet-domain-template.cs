@@ -502,7 +502,7 @@ public interface IUnitOfWork
 // {
 //     public async Task<Result<Guid>> HandleAsync(CreateOrderCommand command, CancellationToken cancellationToken = default)
 //     {
-//         var order = new Order { Id = Guid.NewGuid(), CustomerId = command.CustomerId };
+//         var order = new Order { Id = Guid.CreateVersion7(), CustomerId = command.CustomerId };
 //         await orders.AddAsync(order, cancellationToken);
 //         await unitOfWork.CommitAsync(cancellationToken); // 此 use case 唯一的 commit 點
 //         return Result<Guid>.Ok(order.Id);
@@ -664,7 +664,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //
 //         var order = new Order
 //         {
-//             Id = Guid.NewGuid(),
+//             Id = Guid.CreateVersion7(),
 //             CustomerId = customerId,
 //             Status = OrderStatus.Pending
 //         };
@@ -678,7 +678,7 @@ public interface IDomainEventHandler<TEvent> where TEvent : IDomainEvent
 //         if (Status != OrderStatus.Pending)
 //             return Result.Fail(ErrorType.Validation, "Cannot add items to a non-pending order.");
 //
-//         _items.Add(new OrderItem(Guid.NewGuid(), productId, quantity, unitPrice));
+//         _items.Add(new OrderItem(Guid.CreateVersion7(), productId, quantity, unitPrice));
 //         return Result.Ok();
 //     }
 //
