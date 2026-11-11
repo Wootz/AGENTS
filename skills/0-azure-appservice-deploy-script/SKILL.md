@@ -33,8 +33,10 @@ These are the reminders printed to the user after deployment. Their content depe
 
 Decide from:
 
-- **Database**: if the `.csproj` excludes `*.db` (SQLite is not uploaded), remind that App Service creates it on first start. With SQL Server, remind to confirm the connection string is configured.
-- **Settings**: if `appsettings.Development.json` is excluded from publish, list the environment variables the live site needs. ASP.NET Core nested keys use a **double underscore** in environment variables — `AI:ApiKey` becomes `AI__ApiKey`; a single underscore or a colon is the common mistake. If the file is not excluded, remind instead that `ASPNETCORE_ENVIRONMENT=Development` is required for it to load.
+- **Database**: with SQLite, the local database is not uploaded; remind that App Service creates it on first start. With SQL Server, remind to confirm the connection string is configured.
+- **Settings**: `appsettings.Development.json` is not uploaded, so list the environment variables the live site needs. ASP.NET Core nested keys use a **double underscore** in environment variables — `AI:ApiKey` becomes `AI__ApiKey`; a single underscore or a colon is the common mistake.
+
+Local-only files (development settings, local databases, logs) must be excluded from publish in the `.csproj` before this script is used — `0-spa-backend-single-site` → Step 5 has the block. If the project still publishes any of them, tell the user and offer to add the exclusion.
 
 Example (SQLite + environment-variable settings):
 

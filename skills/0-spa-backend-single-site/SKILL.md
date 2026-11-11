@@ -158,22 +158,30 @@ If the project uses npm/yarn instead of pnpm, replace `PnpmCommand`; the package
 
 ## Step 5: Keep local-only files out of publish
 
-By default the local SQLite database and development settings are packaged too, overwriting live data or leaking keys on deployment:
+Nothing that exists only for local development or testing is published: it overwrites live data, leaks keys, or ships noise. First find what this project has:
+
+```bash
+# 本機資料庫、log、開發用設定檔與其他執行時產生的檔案
+find <WebApi project dir> \( -name "*.db*" -o -name "*.log" -o -name "appsettings.*.json" \) -not -path "*/bin/*" -not -path "*/obj/*"
+# log 與本機儲存的輸出目錄（Serilog 的 path、LocalFileStorage 的根目錄）
+grep -n "path\|Path\|Directory" <WebApi project dir>/appsettings*.json
+```
+
+Then exclude every one of them in the WebApi `.csproj`. The block below covers the usual set; add the project's own directories (local upload storage, test fixtures) to both lines:
 
 ```xml
+<!-- 僅供本機開發／測試使用的檔案一律不隨 publish 輸出：開發設定、本機資料庫、log。 -->
 <ItemGroup>
-  <Content Update="*.db" CopyToPublishDirectory="Never" />
-  <Content Update="*.db-shm" CopyToPublishDirectory="Never" />
-  <Content Update="*.db-wal" CopyToPublishDirectory="Never" />
+  <Content Update="appsettings.Development.json;logs\**;*.db;*.db-shm;*.db-wal;*.log" CopyToPublishDirectory="Never" />
+  <None Update="logs\**;*.db;*.db-shm;*.db-wal;*.log" CopyToPublishDirectory="Never" />
 </ItemGroup>
 ```
 
-Whether to exclude `appsettings.Development.json` depends on how the user plans to configure the live environment — it decides whether settings such as AI keys are readable after deployment, so **ask the user** rather than deciding:
+Both lines are needed: the Web SDK treats `*.json` (including JSON-formatted logs) as `Content`, and files the project marks `CopyToOutputDirectory` are usually `None`. `Update` only touches items that exist, so a pattern with no match is harmless.
 
-- **Exclude**: configure the live site with environment variables (double-underscore form like `AI__ApiKey`). Keys stay out of the package; safer.
-- **Keep**: set `ASPNETCORE_ENVIRONMENT=Development` live and reuse the file. Convenient, but keys enter the package, and that environment's debug endpoints and test backdoors become active too.
+`appsettings.Development.json` is always excluded. Tell the user which settings the live site therefore needs as environment variables, in double-underscore form (`AI:ApiKey` → `AI__ApiKey`).
 
-If the file contains a test authentication bypass switch (e.g. `Testing:EnableTestUserHeader`) and the user chooses "keep", warn them that the backdoor will be live on the public URL.
+If the project has a test authentication bypass (e.g. `Testing:EnableTestUserHeader`), confirm it is enabled only by that excluded file and report it to the user.
 
 ## Step 6: Verify
 
@@ -194,6 +202,8 @@ Check each item (on a free port, so it does not collide with a running dev backe
 | `/api/nonexistent` | 404, **not** HTML |
 | `/assets/*.js` | 200 text/javascript |
 | WebSocket endpoint | Connects |
+
+Also list the publish output and confirm none of the Step 5 files are in it (`find /tmp/publish-test -name "*.db*" -o -name "*.log" -o -name "appsettings.Development.json"` prints nothing).
 
 WebSocket can be checked quickly with node:
 
