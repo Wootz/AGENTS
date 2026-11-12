@@ -32,6 +32,7 @@
 
 | Skill | 用途 |
 | :--- | :--- |
+| `0-project-agent-setup` | 建立或更新專案 `AGENTS.md` 與 `.agents/skills/` 實體副本；依專案選擇當下來源，匯出名稱移除 `0-`。專案規格使用 `generate-spec`，`to-spec` 留供本機個人使用 |
 | `0-dotnet-project-setup` | 從零建立 .NET 後端專案（Clean Architecture、CQRS、CPM） |
 | `0-dotnet-vscode-debug-setup` | 設定 ASP.NET Core + SPA 的 VS Code 偵錯（F5 啟動、中斷點） |
 | `0-spa-backend-single-site` | 前端 SPA 併入 ASP.NET Core，單一站台部署 |
