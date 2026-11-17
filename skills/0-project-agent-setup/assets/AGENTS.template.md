@@ -22,4 +22,6 @@ All AI responses, human-facing documents, and code comments must use Traditional
 
 Project skills are physical copies in `.agents/skills/`, with the source names' leading `0-` removed. Each skill is independently usable; follow the workflow the user has chosen for this project. When using a skill, Codex and Claude Code must read its project-local `SKILL.md`, then follow its conditional references. Resolve paths from the workspace root; resource paths inside a skill are relative to that skill. Use the project name listed below and prefer the project's adapted copy over its global source. Load only the skills needed for the current task.
 
+Codex and Antigravity read `.agents/skills/` directly. Claude Code users run `scripts/link-skills.sh` (macOS, Linux, WSL) or `scripts/link-skills.ps1` (Windows) once after cloning to link `.claude/skills` to `.agents/skills`; see the README. The link is local and Git-ignored.
+
 {{installed_skill_table_with_name_trigger_and_path}}
