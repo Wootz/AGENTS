@@ -45,7 +45,16 @@ docs/architecture/
 ### 1. Choose the mode and scope
 
 - **Full** — the document does not exist yet, or the user is closing the project. Scope: the whole codebase and every chapter. At closing, always run full, even if the document exists: it is the final reconciliation.
-- **Incremental** — the document exists and the user wants it synced mid-project. Scope: changes since the commit recorded in the last 異動紀錄 row (`git diff <commit>..HEAD` plus uncommitted changes), mapped to the chapters they touch.
+- **Incremental** — the document exists and the user wants it synced mid-project. Scope: changes since the baseline (`git diff <baseline> HEAD` plus uncommitted and untracked changes), mapped to the chapters they touch.
+
+**Finding the baseline.** The baseline is the commit at which the document was last synced. Find it from `git log` on every run; the document stores no commit hash, because squash merges, rebases and deleted branches make a stored hash unreachable.
+
+1. Take the date of the last 異動紀錄 row, then list the document's history: `git log --format='%H %cs %s' -- docs/architecture/`.
+2. The baseline is the newest commit in that list whose diff adds an 異動紀錄 row (`git show <hash> -- docs/architecture/`). Skip newer commits that only touch wording: they synced nothing.
+3. If the last row is not committed yet (the document is untracked, or the row shows up in `git diff`), the last sync is newer than any commit. Use the last commit before that row's date instead: `git rev-list -1 --before='<row date> 00:00' HEAD`.
+4. If neither yields a commit, run Full.
+
+When unsure between two candidates, take the older one. A baseline that is too old only widens the scope, and derived content is rewritten from the current code anyway; a baseline that is too new silently skips changes.
 
 **Done when** the scope is written down as a list of chapters (and modules, if split) to write, or the run concludes there is no structural change (pure refactor, bug fix that restores documented behavior) and stops with that report.
 
@@ -76,7 +85,7 @@ Follow [`references/template.md`](references/template.md). New document: create 
 - Technology choices show candidates, criteria and the winner (AGENTS.md → Documentation Style). When an ADR holds the comparison, summarize in one line and link it.
 - A chapter with no content in this project stays as its heading plus `本系統不適用：<理由>`, so a reviewer sees it was considered, not forgotten.
 - Diagrams are Mermaid.
-- Add one 異動紀錄 row: date, mode, the `HEAD` commit hash this run reflects, sources used, chapters changed. The next incremental run diffs from that hash.
+- Add one 異動紀錄 row: date, mode, sources used, chapters changed. Record no commit hash anywhere in the document; the next incremental run finds its baseline from `git log` (step 1).
 
 **Done when** every chapter and module in the scope from step 1 is written or marked 不適用, and every recorded item from steps 2–3 sits in a chapter or a `TODO:`.
 

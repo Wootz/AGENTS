@@ -13,7 +13,6 @@ Cite a recorded item's source inline in parentheses, e.g. `（來源：ADR-0003�
 # [系統名稱] 系統設計規格書
 
 **版本日期**：[YYYY-MM-DD]
-**對應程式版本**：[commit hash]
 
 > 功能規格：`docs/specs/`（有才寫）
 
@@ -156,8 +155,8 @@ Cite a recorded item's source inline in parentheses, e.g. `（來源：ADR-0003�
 
 ## 異動紀錄
 
-| 日期 | 模式 | 對應 commit | 來源 | 變更章節 |
-| :--- | :--- | :--- | :--- | :--- |
+| 日期 | 模式 | 來源 | 變更章節 |
+| :--- | :--- | :--- | :--- |
 ```
 
 ## Split module file (`modules/{module}.md`)
