@@ -6,40 +6,44 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/anthropics/skills.git",
       "skillPath": "skills/docx/SKILL.md",
-      "skillFolderHash": "6e6f5b95c1de6e803cc07b214f5059b074d64e0c",
+      "skillFolderHash": "1ee48004300dcd1b30aa2aec2246c0b4f54c5f89",
       "pluginName": "document-skills",
       "installedAt": "2026-08-13T07:47:37.927Z",
-      "updatedAt": "2026-08-13T07:47:37.927Z"
+      "updatedAt": "2026-11-19T10:33:33.392Z",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
     "pdf": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "sourceUrl": "https://github.com/anthropics/skills.git",
       "skillPath": "skills/pdf/SKILL.md",
-      "skillFolderHash": "6369f4649de69bd6857c9bc3b058a77206009238",
+      "skillFolderHash": "ff7f37394819e5fa311324f953e3c0053a12309d",
       "pluginName": "document-skills",
       "installedAt": "2026-08-13T07:47:37.937Z",
-      "updatedAt": "2026-08-13T07:47:37.937Z"
+      "updatedAt": "2026-11-19T10:33:33.480Z",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
     "pptx": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "sourceUrl": "https://github.com/anthropics/skills.git",
       "skillPath": "skills/pptx/SKILL.md",
-      "skillFolderHash": "64529c8b3f35fe632b7256bd2f6d46e4b40160ce",
+      "skillFolderHash": "1c0176bffc8752e4c4a22eaa8e142a55cc178990",
       "pluginName": "document-skills",
       "installedAt": "2026-08-13T07:47:37.941Z",
-      "updatedAt": "2026-08-13T07:47:37.941Z"
+      "updatedAt": "2026-11-19T10:33:34.034Z",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
     "xlsx": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "sourceUrl": "https://github.com/anthropics/skills.git",
       "skillPath": "skills/xlsx/SKILL.md",
-      "skillFolderHash": "fe6471cc9b5b97aae0b576ccb92ffd9b0207589d",
+      "skillFolderHash": "aad9fca510bd437479fdd5f55cbd70247f7b5780",
       "pluginName": "document-skills",
       "installedAt": "2026-08-13T07:47:37.944Z",
-      "updatedAt": "2026-08-13T07:47:37.944Z"
+      "updatedAt": "2026-11-19T10:33:34.584Z",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
     "frontend-design": {
       "source": "anthropics/skills",
@@ -198,9 +202,10 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
-      "skillFolderHash": "39bd9cc130f7dfcc4e3ea0b3613f6ebed0d0ad2b",
+      "skillFolderHash": "587147dd230da299cc5e84971cb0a33f6676f8a6",
       "installedAt": "2026-08-13T08:12:34.918Z",
-      "updatedAt": "2026-10-29T05:10:15.662Z"
+      "updatedAt": "2026-11-19T10:33:34.629Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "handoff": {
       "source": "mattpocock/skills",
@@ -234,9 +239,10 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/engineering/codebase-design/SKILL.md",
-      "skillFolderHash": "07ba1cd60efc12d0d3a083005c1d9651cf15e39a",
+      "skillFolderHash": "4cbe1c131e1ea54109cb1e4e5f3c505810db6606",
       "installedAt": "2026-08-13T08:12:34.921Z",
-      "updatedAt": "2026-10-29T05:10:22.585Z"
+      "updatedAt": "2026-11-19T10:33:34.707Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "diagnosing-bugs": {
       "source": "mattpocock/skills",
@@ -279,9 +285,10 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/engineering/research/SKILL.md",
-      "skillFolderHash": "0a6796c5667e95ed2301ba7381c123b4acb2ae1a",
+      "skillFolderHash": "2f8f36af48796faed5c687c75bb650071631a984",
       "installedAt": "2026-08-13T08:12:34.924Z",
-      "updatedAt": "2026-09-07T07:51:51.317Z"
+      "updatedAt": "2026-11-19T10:33:34.748Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "prototype": {
       "source": "mattpocock/skills",
@@ -333,18 +340,20 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/engineering/code-review/SKILL.md",
-      "skillFolderHash": "fee7bb5fdddc069d58cbea09b2c36b5a859eac05",
+      "skillFolderHash": "a8ef561571acbb611de8ff19ba6da75b197c63a8",
       "installedAt": "2026-08-13T08:39:03.020Z",
-      "updatedAt": "2026-10-29T05:10:44.322Z"
+      "updatedAt": "2026-11-19T10:33:34.878Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "grilling": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/productivity/grilling/SKILL.md",
-      "skillFolderHash": "28aceb4c9567b985cb47f7db88cf23c9f33af8b8",
+      "skillFolderHash": "f551b6e0d219fdda0b6abf277f8f915b3127d1e9",
       "installedAt": "2026-08-13T08:39:03.033Z",
-      "updatedAt": "2026-10-29T05:10:49.760Z"
+      "updatedAt": "2026-11-19T10:33:35.122Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "triage": {
       "source": "mattpocock/skills",
@@ -360,9 +369,10 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/engineering/wayfinder/SKILL.md",
-      "skillFolderHash": "32b0ce970b1394ede47116e1d3e07f9ccc87591f",
+      "skillFolderHash": "25da74eadc3e388b2f2a2cc716f3d44b2fb9dfe0",
       "installedAt": "2026-08-13T08:39:03.042Z",
-      "updatedAt": "2026-10-29T05:10:54.357Z"
+      "updatedAt": "2026-11-19T10:33:35.195Z",
+      "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa"
     },
     "wizard": {
       "source": "mattpocock/skills",
@@ -386,19 +396,32 @@
       "source": "Leonxlnx/taste-skill",
       "sourceType": "github",
       "sourceUrl": "https://github.com/Leonxlnx/taste-skill.git",
+      "commit": "f6b76575f949707b4e3c37cd86cb44b0b98643e8",
       "skillPath": "skills/taste-skill/SKILL.md",
-      "skillFolderHash": "5743b6eb4d005c5bbe51aa4ecae701eb052d6198",
+      "skillFolderHash": "90f92ba7a3ce514cf85a2809583712dbd14106ea",
       "pluginName": "taste-skill",
       "installedAt": "2026-11-05T01:30:31.596Z",
-      "updatedAt": "2026-11-05T01:30:31.596Z"
+      "updatedAt": "2026-11-19T10:29:09.489Z"
     }
   },
   "dismissed": {
     "findSkillsPrompt": true
   },
   "lastSelectedAgents": [
-    "antigravity-cli",
+    "amp",
+    "cline",
     "codex",
+    "cursor",
+    "droid",
+    "fx",
+    "gemini-cli",
+    "github-copilot",
+    "kilo",
+    "kimi-code-cli",
+    "opencode",
+    "pi",
+    "warp",
+    "zed",
     "claude-code"
   ]
 }

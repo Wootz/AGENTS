@@ -1,6 +1,7 @@
 ---
 name: 0-generate-system-design
-description: Write or update the project's system design specification (系統設計規格書) — an arc42-lite Markdown document at docs/architecture/ describing how the system is built now (context, building blocks, data, APIs, deployment, cross-cutting concepts, decisions). Use it at project closing to produce the deliverable (「結案」「產出系統設計規格書」「系統設計文件」), or mid-project to sync the document after a feature lands (「更新設計文件」「更新架構文件」「補設計文件」). Optional: it works with or without docs/specs, plans or ADRs.
+description: >-
+  Write or update the project's system design specification (系統設計規格書) — an arc42-lite Markdown document at docs/architecture/ describing how the system is built now (context, building blocks, data, APIs, deployment, cross-cutting concepts, decisions). Use it at project closing to produce the deliverable (「結案」「產出系統設計規格書」「系統設計文件」), or mid-project to sync the document after a feature lands (「更新設計文件」「更新架構文件」「補設計文件」). Optional: it works with or without docs/specs, plans or ADRs.
 ---
 
 # Produce the System Design Specification
