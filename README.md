@@ -69,3 +69,27 @@ ln -s ~/.agents/skills ~/.claude/skills
 ln -s ~/.agents/AGENTS.md ~/.codex/AGENTS.md
 ln -s ~/.agents/skills ~/.codex/skills
 ```
+
+## Claude Code 狀態列
+
+1. 安裝 `jq`：
+
+   ```bash
+   # macOS
+   brew install jq
+
+   # WSL
+   sudo apt install jq
+
+   # Windows（Git Bash）：在 PowerShell 執行，完成後重新開啟終端機
+   winget install jqlang.jq
+   ```
+
+2. 在 `~/.claude/settings.json` 加入：
+
+   ```json
+   "statusLine": {
+     "type": "command",
+     "command": "bash ~/.agents/claude-code/statusline-command.sh"
+   }
+   ```
