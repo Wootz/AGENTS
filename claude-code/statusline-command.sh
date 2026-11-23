@@ -72,27 +72,26 @@ if [ -n "$used" ]; then
 fi
 
 # 5. Rate limit（Claude.ai 訂閱：5 小時 / 7 天額度，各視窗獨立，缺少時略過）
-# 格式：| 99%(55m) 13%(6d14h)（5 小時在前、7 天在後）；>=95% 紅色、>=80% 黃色，其餘綠色
+# 格式：| 99%(14:30) 13%(週六 09:00)（5 小時在前、7 天在後）；>=95% 紅色、>=80% 黃色，其餘綠色
 now=$(date +%s)
+today=$(date +%Y%m%d)
+WEEKDAYS=(一 二 三 四 五 六 日)
 
-# 將剩餘秒數轉成倒數文字：>=1 天顯示 d/h，>=1 小時顯示 h/m，否則 m
-format_countdown() {
-  local remain=$1 d h m
-  d=$((remain / 86400))
-  h=$(((remain % 86400) / 3600))
-  m=$(((remain % 3600) / 60))
-  if [ "$d" -ge 1 ]; then
-    printf '%dd%dh' "$d" "$h"
-  elif [ "$remain" -ge 3600 ]; then
-    printf '%dh%dm' "$h" "$m"
+# 將重置時間（epoch 秒）轉成本地時間文字：今天顯示 HH:MM，其他日期顯示 週X HH:MM
+# date -r 為 macOS/BSD 語法，失敗時改用 GNU 的 date -d @
+format_reset_time() {
+  local ts=$1 day dow hm
+  read -r day dow hm <<<"$(date -r "$ts" '+%Y%m%d %u %H:%M' 2>/dev/null || date -d "@$ts" '+%Y%m%d %u %H:%M')"
+  if [ "$day" = "$today" ]; then
+    printf '%s' "$hm"
   else
-    printf '%dm' "$m"
+    printf '週%s %s' "${WEEKDAYS[$((dow - 1))]}" "$hm"
   fi
 }
 
 # 參數：使用百分比、重置時間（epoch 秒）
 rate_limit_part() {
-  local pct=$1 resets=$2 pct_int color text remain
+  local pct=$1 resets=$2 pct_int color text
   [ -z "$pct" ] && return
   pct_int=$(printf '%.0f' "$pct")
   color=$COL_OK
@@ -101,9 +100,8 @@ rate_limit_part() {
   text="${pct_int}%"
   if [ -n "$resets" ]; then
     resets=${resets%.*}
-    remain=$((resets - now))
-    # 重置時間已過則不顯示倒數
-    [ "$remain" -gt 0 ] && text="${text}($(format_countdown "$remain"))"
+    # 重置時間已過則不顯示
+    [ "$resets" -gt "$now" ] && text="${text}($(format_reset_time "$resets"))"
   fi
   printf '%s' "${color}${text}${RESET}"
 }
