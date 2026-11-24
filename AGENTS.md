@@ -23,7 +23,7 @@ All AI responses must be in **Traditional Chinese (正體中文)**.
 - 📄 **Pagination**: When designing new pagination, name the param `page` for **1-based** and `pageIndex` for **0-based**. If existing docs already specify the convention, follow those.
 - 🔒 **Git**: Obtain explicit user approval before any `git commit` (including all variants); automatic commits are strictly forbidden. `git push` is strictly forbidden.
 - ✍️ **Commit Message**: Contain only the change description itself. Never append AI/tool attribution trailers such as `Co-Authored-By`, `Claude-Session`, `Generated with ...`, or any similar footer.
-- 📌 **TODO Marker**: Mark every pending task or open decision in code with a `TODO: xxxxx` comment.
+- 📌 **TODO Marker**: Mark every pending task or open decision in code with a comment that starts with the literal `TODO: ` (uppercase, colon, one space) followed by the description, e.g., `// TODO: 串接金流 API`.
 
 ## 📖 Docs-First Alignment
 - Where documentation exists (local `/docs`, design specs, this file), it is the single source of truth: namespaces, DB schemas, API routes, and payload models must match the documented contracts.
