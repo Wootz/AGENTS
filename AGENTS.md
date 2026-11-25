@@ -24,6 +24,7 @@ All AI responses must be in **Traditional Chinese (正體中文)**.
 - 🔒 **Git**: Obtain explicit user approval before any `git commit` (including all variants); automatic commits are strictly forbidden. `git push` is strictly forbidden.
 - ✍️ **Commit Message**: Contain only the change description itself. Never append AI/tool attribution trailers such as `Co-Authored-By`, `Claude-Session`, `Generated with ...`, or any similar footer.
 - 📌 **TODO Marker**: Mark every pending task or open decision in code with a comment that starts with the literal `TODO: ` (uppercase, colon, one space) followed by the description, e.g., `// TODO: 串接金流 API`.
+- 🧪 **Tests define expected behavior**: Never change what a test you did not write in the current task verifies to make it pass — not its assertions, test data, mocks, or snapshots (`-u`), and not by deleting or skipping it. If the code is wrong, fix the code; if the test itself looks wrong, stop and ask. When a new requirement genuinely changes expected behavior, tell the user — before the change or when reporting the result — which tests changed and why.
 
 ## 📖 Docs-First Alignment
 - Where documentation exists (local `/docs`, design specs, this file), it is the single source of truth: namespaces, DB schemas, API routes, and payload models must match the documented contracts.
@@ -40,16 +41,18 @@ All AI responses must be in **Traditional Chinese (正體中文)**.
 - 🔬 **Minimal footprint**: Change only what is requested. No refactoring, renaming, extraction, "clean up", or dependency/lock-file upgrades beyond the task's scope. The "latest LTS/stable" dependency rule covers only packages newly added for the task.
 
 ## ⚡ Conflicts & User Decisions
-Never decide on the user's behalf. Ask whenever the requirement is unclear, several viable approaches exist, or the user's approach has potential errors or conflicts with existing patterns:
+Ask the user whenever the answer would change the work — the requirement is unclear, several viable approaches exist, or the user's approach has potential errors or conflicts with existing patterns:
 1. State the question or issue explicitly, and lay out the options or alternatives with reasoning. Always include your recommendation and why — never ask blind.
 2. Ask the user before proceeding — never silently guess, pick one, or work around it.
 3. If the user chooses to proceed anyway, implement exactly as requested without further objection.
 
+**Exception — obvious defaults**: Decide without asking only when existing code, docs, or conventions already settle the choice and it is easy to reverse. State the choice in the response so the user can override it.
+
+**No repeat questions**: Don't re-ask what is already answered in this conversation or recorded in docs/memory, unless new information puts the answer in doubt.
+
 🛑 **Challenge mistakes**: When something the user says is factually wrong, imprecise, or will not achieve what they want, say so before acting — what is wrong, the evidence, and what you suggest instead. Never accept an instruction wholesale just because the user gave it.
 
 ❓ **Questions are not instructions**: When the user asks a question (e.g., "Is X allowed?", "Why does Y happen?"), only answer it — do not edit files, run changes, or apply fixes. Offer the change and wait for the user to ask for it.
-
-Don't overthink it: routine judgment calls with an obvious default are made, not asked about. Ask when the answer would genuinely change the work — not to confirm the trivial, and never the same question twice.
 
 ## 🎨 Frontend
 - 📦 **Package manager**: Prefer `pnpm` for new projects. Existing projects keep whatever they already use; never switch package managers without explicit instruction.
