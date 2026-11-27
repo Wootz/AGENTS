@@ -10,13 +10,13 @@ When necessary project information is missing, obtain the information itself. Do
 
 ## Project specs
 
-For project specification work, use the current `0-generate-spec` source and export it as `generate-spec`. Read its actual instructions and resources at execution time; do not embed a snapshot here or choose between spec producers.
+For project specification work, use the current `0-doc-01-spec` source and export it as `doc-01-spec`. Read its actual instructions and resources at execution time; do not embed a snapshot here or choose between spec producers.
 
 `to-spec` is reserved for the owner's personal local use. Exclude it from project skill proposals, copies, and indexes; leave the local source untouched. If an existing project copy needs removal during an update, identify it in the proposed changes and preserve unrelated content.
 
 ## Recommend planning where useful
 
-Recommend writing a Plan before implementing feature work. The user decides whether to adopt `0-generate-plan` (exported as `generate-plan`), another planning method, or a different workflow. Copy and document only the skills and gates the project adopts.
+Recommend writing a Plan before implementing feature work. The user decides whether to adopt `0-doc-02-plan` (exported as `doc-02-plan`), another planning method, or a different workflow. Copy and document only the skills and gates the project adopts.
 
 If the project chooses a Spec-and-Plan workflow, a useful sequence is:
 

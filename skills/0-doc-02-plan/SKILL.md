@@ -1,5 +1,5 @@
 ---
-name: 0-generate-plan
+name: 0-doc-02-plan
 description: Produce a Spec Kit–format implementation plan and task list (Technical Context + data model + Tasks grouped by User Story) from an approved Spec, saved under docs/plans/ (「產出 Plan」「寫實作計畫」「拆任務」). Stage three of the SRS → Spec → Plan → Code → Verify flow; the Plan and Tasks live in one document.
 ---
 
@@ -199,7 +199,7 @@ Check in order and stop at the first level that works:
 
 ### What must be verified
 
-The package rules (version, release age, maintenance, main-package constraint, license, transitive dependencies) are defined in AGENTS.md → Dependencies; apply them as written and run the `0-package-compliance` skill on the candidate. In addition:
+The package rules (version, release age, maintenance, main-package constraint, license, transitive dependencies) are defined in AGENTS.md → Dependencies; apply them as written and run the `0-qa-package-compliance` skill on the candidate. In addition:
 
 **License (legal risk, top priority)**
 

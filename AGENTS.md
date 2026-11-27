@@ -19,7 +19,7 @@ All AI responses must be in **Traditional Chinese (正體中文)**.
   - **License**: Any commercially usable license (MIT, Apache 2.0, BSD, ISC, etc.); GPL-like copyleft is prohibited. Re-check the license of the exact version on every add or upgrade — licenses change between versions. A custom/proprietary, dual or revenue-threshold license that permits commercial use requires asking the user before adding it.
   - **Weak copyleft (LGPL, MPL 2.0)**: Allowed only when dynamically referenced as a separate library, unmodified, and not merged into a single file/bundle (e.g., `PublishSingleFile`, Native AOT, ILMerge, a frontend bundler inlining it).
   - **Transitive dependencies**: The license rules apply to the whole dependency tree, not only direct packages.
-  - **Compliance check**: After adding or upgrading any package, run the `0-package-compliance` skill and report its findings.
+  - **Compliance check**: After adding or upgrading any package, run the `0-qa-package-compliance` skill and report its findings.
 - 📄 **Pagination**: When designing new pagination, name the param `page` for **1-based** and `pageIndex` for **0-based**. If existing docs already specify the convention, follow those.
 - 🔒 **Git**: Obtain explicit user approval before any `git commit` (including all variants); automatic commits are strictly forbidden. `git push` is strictly forbidden.
 - ✍️ **Commit Message**: Contain only the change description itself. Never append AI/tool attribution trailers such as `Co-Authored-By`, `Claude-Session`, `Generated with ...`, or any similar footer.

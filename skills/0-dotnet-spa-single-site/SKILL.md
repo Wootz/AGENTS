@@ -1,5 +1,5 @@
 ---
-name: 0-spa-backend-single-site
+name: 0-dotnet-spa-single-site
 description: Merge a standalone frontend SPA (Vue/React/Vite) and an ASP.NET Core backend into a single-site deployment, so dotnet publish builds the frontend into wwwroot automatically. Use it whenever the user mentions integrating frontend and backend, deploying only one site, merging into a single site, putting the frontend into wwwroot, not deploying them separately, a single App Service (「前後端整合」「只想部署一個站台」「合併成單一站台」「前端放進 wwwroot」「整合前端」「一個站台就好」), or asks how the backend can serve both the API and the frontend static files.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: 0-generate-system-design
+name: 0-doc-03-system-design
 description: >-
   Write or update the project's system design specification (系統設計規格書) — an arc42-lite Markdown document at docs/architecture/ describing how the system is built now (context, building blocks, data, APIs, deployment, cross-cutting concepts, decisions). Use it at project closing to produce the deliverable (「結案」「產出系統設計規格書」「系統設計文件」), or mid-project to sync the document after a feature lands (「更新設計文件」「更新架構文件」「補設計文件」). Optional: it works with or without docs/specs, plans or ADRs.
 ---
@@ -37,7 +37,7 @@ docs/architecture/
     └── {module}.md
 ```
 
-`docs/design/` belongs to `0-figma-design-alignment` (UI design evidence); keep this document out of it.
+`docs/design/` belongs to `0-qa-figma-alignment` (UI design evidence); keep this document out of it.
 
 **Split rule**: one file by default. When the project has roughly 5+ business modules (the same threshold `0-dotnet-project-setup` uses for `Modules/`), move each module's part of chapter 5 into `modules/{module}.md` (kebab-case of the module name) and leave a linking table in chapter 5. All other chapters stay in the main file.
 

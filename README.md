@@ -24,21 +24,21 @@
 
 | Skill | 用途 | 產出 |
 | :--- | :--- | :--- |
-| `0-generate-spec` | 依 SRS 寫功能規格（Spec Kit 格式），只寫 WHAT／WHY | `docs/specs/` |
-| `0-generate-plan` | 依已核准的 Spec 寫實作計畫與任務清單 | `docs/plans/` |
-| `0-generate-system-design` | 系統設計規格書（arc42 精簡版），結案或功能完成後同步 | `docs/architecture/` |
+| `0-doc-01-spec` | 依 SRS 寫功能規格（Spec Kit 格式），只寫 WHAT／WHY | `docs/specs/` |
+| `0-doc-02-plan` | 依已核准的 Spec 寫實作計畫與任務清單 | `docs/plans/` |
+| `0-doc-03-system-design` | 系統設計規格書（arc42 精簡版），結案或功能完成後同步 | `docs/architecture/` |
 
 ### 專案建置與工具
 
 | Skill | 用途 |
 | :--- | :--- |
-| `0-project-agent-setup` | 建立或更新專案 `AGENTS.md` 與 `.agents/skills/` 實體副本；依專案選擇當下來源，匯出名稱移除 `0-`。專案規格使用 `generate-spec`，`to-spec` 留供本機個人使用 |
+| `0-project-agent-setup` | 建立或更新專案 `AGENTS.md` 與 `.agents/skills/` 實體副本；依專案選擇當下來源，匯出名稱移除 `0-`。專案規格使用 `doc-01-spec`，`to-spec` 留供本機個人使用 |
 | `0-dotnet-project-setup` | 從零建立 .NET 後端專案（Clean Architecture、CQRS、CPM） |
 | `0-dotnet-vscode-debug-setup` | 設定 ASP.NET Core + SPA 的 VS Code 偵錯（F5 啟動、中斷點） |
-| `0-spa-backend-single-site` | 前端 SPA 併入 ASP.NET Core，單一站台部署 |
-| `0-azure-appservice-deploy-script` | 以發行設定檔產生一鍵部署到 Azure App Service 的腳本 |
-| `0-figma-design-alignment` | 畫面對齊 Figma 設計稿，並留下比對證據 |
-| `0-package-compliance` | 檢查套件授權、版本、發布天數與維護狀態是否符合 AGENTS.md |
+| `0-dotnet-spa-single-site` | 前端 SPA 併入 ASP.NET Core，單一站台部署 |
+| `0-dotnet-azure-deploy-script` | 以發行設定檔產生一鍵部署到 Azure App Service 的腳本 |
+| `0-qa-figma-alignment` | 畫面對齊 Figma 設計稿，並留下比對證據 |
+| `0-qa-package-compliance` | 檢查套件授權、版本、發布天數與維護狀態是否符合 AGENTS.md |
 
 ## 安裝非自建的 Skill
 

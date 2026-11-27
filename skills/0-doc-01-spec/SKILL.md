@@ -1,5 +1,5 @@
 ---
-name: 0-generate-spec
+name: 0-doc-01-spec
 description: Produce a Spec Kit–format feature specification (User Stories + Acceptance Scenarios + FR functional requirements + Success Criteria) from an SRS, requirement interview notes or designs, saved under docs/specs/ (「產出 Spec」「寫功能規格」「依 SRS 寫 spec」). Stage two of the SRS → Spec → Plan → Code → Verify flow. Writes only WHAT and WHY, never HOW; unclear requirements are marked [NEEDS CLARIFICATION] instead of guessed.
 ---
 

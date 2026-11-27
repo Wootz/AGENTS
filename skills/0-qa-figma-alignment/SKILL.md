@@ -1,5 +1,5 @@
 ---
-name: 0-figma-design-alignment
+name: 0-qa-figma-alignment
 description: Align a frontend screen with its Figma design and leave documentation that can serve as evidence for the client. Use it whenever the user talks about matching the design, the screen differing from Figma, the client saying the screen is wrong, comparing against the design, the UI not matching, or changing the UI to follow the design (「對齊設計稿」「跟 Figma 不一樣」「客戶說畫面不對」「設計稿比對」「UI 跟設計不符」「照設計稿改」), and when the user pastes design screenshots or a Figma link, or complains about gaps between screen and design. Covers getting the design (Figma MCP or user screenshots), pixel-level measurement, SVG icon hand-off, archiving the design as evidence, recording contradictions, and a screenshot acceptance report after the fix.
 ---
 

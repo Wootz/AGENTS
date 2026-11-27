@@ -10,7 +10,7 @@ The SRS is the requirement document the client signs: it turns the agreed scope 
 - **Traceability**: every requirement cites its scope source — `[Ref: SOW-2.1.x]` or `[Ref: CR-YYYYMMDD-NN]` — and the MOM where it was agreed. A requirement with no source does not belong in the SRS.
 - **Binary acceptance**: every criterion is Pass or Fail. 「效能良好」「介面友善」「操作直覺」 cannot be accepted or rejected; 「登入回應 < 3 秒」「3 次點擊內完成結帳」 can.
 
-The SRS is client-facing and project-wide. `0-generate-spec` later splits it into per-feature, development-facing Specs.
+The SRS is client-facing and project-wide. `0-doc-01-spec` later splits it into per-feature, development-facing Specs.
 
 > **Language**: written in Traditional Chinese (正體中文). Keep IDs (`REQ-LOGIN-001`, `SOW-2.1.1`) and data types in English.
 
@@ -148,4 +148,4 @@ Tell the user:
 - SOW items not yet covered (尚未訪談) and unruled 🟡 items left out
 - Every （預設） NFR, so they can be confirmed before the client sees them
 
-After the client signs, `0-generate-spec` turns each feature into a Spec.
+After the client signs, `0-doc-01-spec` turns each feature into a Spec.

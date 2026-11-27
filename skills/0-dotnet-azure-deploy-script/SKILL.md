@@ -1,5 +1,5 @@
 ---
-name: 0-azure-appservice-deploy-script
+name: 0-dotnet-azure-deploy-script
 description: Create a one-click bash script that deploys a .NET project to Azure App Service — it parses credentials from the publish profile (.publishsettings) downloaded from the Azure Portal and uploads through the Kudu zipdeploy API. Use it whenever the user mentions deploy-azure.sh, deploying to Azure, an App Service deploy script, publish-profile deployment, one-click deploy or zipdeploy (「部署到 Azure」「App Service 部署腳本」「一鍵部署」「加一個部署腳本」「弄個上 Azure 的 sh」), or wants to deploy without installing the Azure CLI.
 ---
 
@@ -36,7 +36,7 @@ Decide from:
 - **Database**: with SQLite, the local database is not uploaded; remind that App Service creates it on first start. With SQL Server, remind to confirm the connection string is configured.
 - **Settings**: `appsettings.Development.json` is not uploaded, so list the environment variables the live site needs. ASP.NET Core nested keys use a **double underscore** in environment variables — `AI:ApiKey` becomes `AI__ApiKey`; a single underscore or a colon is the common mistake.
 
-Local-only files (development settings, local databases, logs) must be excluded from publish in the `.csproj` before this script is used — `0-spa-backend-single-site` → Step 5 has the block. If the project still publishes any of them, tell the user and offer to add the exclusion.
+Local-only files (development settings, local databases, logs) must be excluded from publish in the `.csproj` before this script is used — `0-dotnet-spa-single-site` → Step 5 has the block. If the project still publishes any of them, tell the user and offer to add the exclusion.
 
 Example (SQLite + environment-variable settings):
 

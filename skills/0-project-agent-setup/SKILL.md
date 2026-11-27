@@ -19,14 +19,26 @@ Human-facing responses and documents use Traditional Chinese. Agent-facing files
 - Discover skill sources from the current session's catalog and readable local skill directories. Resolve the user's home through the environment when needed; never assume a developer-specific absolute path. Ask for a source location only if it cannot be discovered.
 - Enumerate the current source files on **every invocation** and read each candidate's actual `SKILL.md` frontmatter (`name`, `description`). A session catalog helps locate sources but may be incomplete or stale. Do not store a fixed skill list or embed copies of global skills in this skill's assets.
 - Include hidden and Git-ignored installed skills when enumerating a source directory (for example, `rg --files --hidden --no-ignore -g SKILL.md <source-root>`). Source-control ignore rules do not determine whether a skill is installed.
-- Match candidates to this project's stack and confirmed workflow. Include only skills developers will need for that workflow; creating a project does not justify copying the entire local library. Different projects may select different sets. For specification work, use `0-generate-spec`; exclude the owner's personal `to-spec` from project exports.
+- Match candidates to this project's stack and confirmed workflow. Include only skills developers will need for that workflow; creating a project does not justify copying the entire local library. Different projects may select different sets. For specification work, use `0-doc-01-spec`; exclude the owner's personal `to-spec` from project exports.
 - Read selected skills in full, and inspect their referenced resources and helpers. Identify actual document, tool, and runtime requirements. Treat references to other workflows as optional recommendations, not mandatory skill dependencies. Keep necessary supporting documents/resources within the selected skill or project, and resolve missing resources before claiming the project is self-contained.
 
 ## 2. Confirm the project-specific selection
 
 Present a compact table in Traditional Chinese: source skill name, project skill name, purpose in this project, source location, and required adaptation or document/tool prerequisites. Derive every row from the current source content and project needs; include no automatically required companion skills. For updates, compare the current source with the mapped project copy and show the proposed additions or updates, retained project adaptations, and any explicit removal proposals. A source that is no longer installed locally is not evidence that its project copy should be deleted.
 
-Build a source-to-project name map before writing. Remove exactly one leading `0-` from every exported skill name; retain the rest of the name. Names without that prefix stay unchanged. For example, `0-generate-spec` becomes `generate-spec`, and `0-pm-05-generate-srs` becomes `pm-05-generate-srs`. Check the mapped names against the selected sources and existing project skills for collisions, including case-insensitive collisions on Windows. Reuse an existing mapped copy for an update only when it is the intended source's project copy; ask about ambiguous collisions before overwriting or merging.
+Build a source-to-project name map before writing. Remove exactly one leading `0-` from every exported skill name; retain the rest of the name. Names without that prefix stay unchanged. For example, `0-doc-01-spec` becomes `doc-01-spec`, and `0-pm-05-generate-srs` becomes `pm-05-generate-srs`. Check the mapped names against the selected sources and existing project skills for collisions, including case-insensitive collisions on Windows. Reuse an existing mapped copy for an update only when it is the intended source's project copy; ask about ambiguous collisions before overwriting or merging.
+
+Some sources were renamed. On an update, treat a project copy under a legacy name as the copy of its current source: propose renaming it to the current mapped name (directory, YAML `name`, and references, as in section 3) instead of adding a second copy, and preserve its project adaptations.
+
+| Legacy project name | Current project name |
+| :--- | :--- |
+| `generate-spec` | `doc-01-spec` |
+| `generate-plan` | `doc-02-plan` |
+| `generate-system-design` | `doc-03-system-design` |
+| `spa-backend-single-site` | `dotnet-spa-single-site` |
+| `azure-appservice-deploy-script` | `dotnet-azure-deploy-script` |
+| `figma-design-alignment` | `qa-figma-alignment` |
+| `package-compliance` | `qa-package-compliance` |
 
 Use an already-approved selection when present. Otherwise ask once about the proposed project-local selection and adaptations. Do not add another confirmation if the existing approval already covers them. Missing skills or incompatible prerequisites require a concrete alternative and a user decision, rather than silently installing or replacing tools.
 
